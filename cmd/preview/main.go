@@ -10,6 +10,7 @@ import (
 	"image/png"
 	"log"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/sijokun/PitWall/circuit"
@@ -29,6 +30,7 @@ func main() {
 	tabName := flag.String("tab", "timing", "tab to render: timing | map | rc")
 	circuitKey := flag.Int("circuit", 0, "override MultiViewer circuit key for the map tab")
 	circuitYear := flag.Int("year", 2025, "circuit year for -circuit")
+	into := flag.Duration("into", 0, "with -source openf1: render this far into the session (e.g. 60m) instead of its final state")
 	flag.Parse()
 	dnsfix.Install()
 
@@ -71,7 +73,22 @@ func main() {
 		log.Printf("falling back to OpenF1 (most recent session)")
 		api := openf1.New(*sessionKey)
 		api.APIKey = os.Getenv("OPENF1_API_KEY")
-		st = api.Refresh(ctx)
+		if key, err := strconv.Atoi(*sessionKey); *into > 0 && err == nil {
+			// Play the session forward to a chosen point instead of taking the
+			// finished state — mid-race frames show gaps and tyre spread that
+			// a chequered-flag snapshot does not.
+			rep, err := api.LoadReplay(ctx, key)
+			if err != nil {
+				log.Fatalf("load replay: %v", err)
+			}
+			st = rep.Advance(*into)
+			log.Printf("advanced %v into session %d", *into, key)
+		} else {
+			if *into > 0 {
+				log.Printf("-into needs a numeric -session; showing the final state")
+			}
+			st = api.Refresh(ctx)
+		}
 	}
 	if st.Err != "" {
 		log.Printf("warning: %s", st.Err)

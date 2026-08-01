@@ -11,10 +11,15 @@ Shows for the current session: positions, intervals and gaps, last lap times
 status flags, and race control messages.
 
 <p align="center">
-  <img src="docs/screenshot-timing.png" alt="Timing tab — 2025 Hungarian GP" width="45%">
-  <img src="docs/screenshot-racecontrol.png" alt="Race control tab — 2025 Hungarian GP" width="45%">
+  <img src="docs/device-photo.jpeg" alt="Pit Wall running on a reMarkable Paper Pro at the Hungaroring" width="70%">
 </p>
-<p align="center"><em>The timing and race control tabs, replaying the 2025 Hungarian Grand Prix.</em></p>
+<p align="center"><em>Live timing trackside at the Hungaroring — 2026 Practice 2.</em></p>
+
+<p align="center">
+  <img src="docs/screenshot-timing.png" alt="Timing tab — 2026 Hungarian GP, lap 38" width="45%">
+  <img src="docs/screenshot-racecontrol.png" alt="Race control tab — 2026 Hungarian GP, lap 38" width="45%">
+</p>
+<p align="center"><em>The timing and race control tabs, 38 laps into the 2026 Hungarian Grand Prix.</em></p>
 
 ## Data sources
 
@@ -163,6 +168,10 @@ Render a frame to PNG on your desktop (no tablet needed):
 go run ./cmd/preview -o preview.png              # auto: live, else OpenF1
 go run ./cmd/preview -source live                # force live timing
 go run ./cmd/preview -source openf1 -session 9165
+
+# a chosen point in a past session, rather than its finished state — the
+# README screenshots are this session, 60 minutes in
+go run ./cmd/preview -source openf1 -session 11342 -into 60m
 
 # render from a recorded session (2025 Japanese GP, from f1stuff/f1-live-data)
 go run ./cmd/preview -replay testdata/partial_saved_data_2025_04_06.txt
