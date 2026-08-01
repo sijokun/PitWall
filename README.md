@@ -6,8 +6,7 @@ Live Formula 1 timing on your reMarkable Paper Pro's color e-ink display.
 Runs as an [AppLoad](https://github.com/asivery/rmpp-appload) app (qtfb
 windowed mode), so the stock reMarkable UI stays intact.
 
-Shows for the current session: positions, intervals and gaps, last lap times
-(personal bests in green), tyre compound + age, pit stop counts, track
+Shows for the current session: positions, intervals and gaps, last lap times, tyre compound + age, pit stop counts, track
 status flags, and race control messages.
 
 <p align="center">
