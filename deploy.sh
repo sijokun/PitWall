@@ -1,5 +1,5 @@
 #!/bin/sh
-# Build for the reMarkable Paper Pro (aarch64 Linux) and install as an
+# Build Pit Wall for the reMarkable Paper Pro (aarch64 Linux) and install as an
 # AppLoad external app. Usage: ./deploy.sh [device-ip]   (default 10.11.99.1 = USB)
 set -e
 DEVICE="${1:-10.11.99.1}"
@@ -39,4 +39,4 @@ if [ -f icon.png ]; then
     scp icon.png "root@$DEVICE:$APPDIR/icon.png"
 fi
 
-echo "Done. Open AppLoad on the device and launch 'F1 Telemetry'."
+echo "Done. Open AppLoad on the device and launch 'Pit Wall'."
