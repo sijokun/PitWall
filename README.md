@@ -30,8 +30,7 @@ status flags, and race control messages.
 
 > The older `/signalr` (ASP.NET SignalR 1.5) endpoint was locked behind an
 > F1-account token in 2025 and now returns HTTP 401. The app uses the modern
-> `/signalrcore` (ASP.NET Core SignalR) endpoint instead, which is open. No
-> `F1_TOKEN` is needed anymore.
+> `/signalrcore` (ASP.NET Core SignalR) endpoint instead, which is open.
 
 ## Prerequisites (one-time, on the device)
 
@@ -43,21 +42,11 @@ status flags, and race control messages.
 
 ## Install
 
-### From the Store (recommended)
-
-Once listed in the [remagic](https://github.com/maximerivest/remagic) catalog,
-no toolchain or clone is needed — tap **Pit Wall** in the Store app on the
-tablet, or from your computer:
-
-```sh
-remagic install pitwall
-```
-
-### From source
-
 Requires Go 1.22+. With the tablet connected over USB (or on the same Wi-Fi):
 
 ```sh
+git clone https://github.com/sijokun/PitWall.git
+cd PitWall
 ./deploy.sh              # USB: root@10.11.99.1
 ./deploy.sh 192.168.1.50 # or your device's Wi-Fi IP
 ```
@@ -69,10 +58,9 @@ and moved into place, so a deploy works while the app is running (it picks
 up the new build on the next launch). Then open AppLoad on the device and
 launch **Pit Wall**.
 
-No configuration is required. `.env.example` documents the two optional
-environment variables (`F1_TOKEN`, `F1_DNS`); copy it to `.env` only if you
-need them — `.env` is gitignored and `deploy.sh` injects `F1_TOKEN` into the
-deployed manifest rather than the committed one.
+No configuration is required — no account, token or API key. `.env.example`
+documents the one optional variable (`F1_DNS`, below); copy it to `.env` only
+if your network needs a specific resolver.
 
 The launcher icon is generated, not a checked-in asset:
 
