@@ -168,6 +168,14 @@ go run ./cmd/preview -replay testdata/partial_saved_data_2025_04_06.txt
 Record your own session file during any live session with FastF1:
 `python -m fastf1.livetiming save mysession.txt`.
 
+### Other tools
+
+`cmd/livedebug` runs the app's own live-timing client and reports what it
+sees (connection health, feed errors, snapshot summaries) — the first thing
+to reach for when a live session misbehaves. `cmd/rawfeed` taps the raw
+SignalR wire. `cmd/uishot` renders the static screens (browser, settings)
+to PNGs.
+
 Layout: `qtfb/` — pure-Go client for the AppLoad shared-memory framebuffer
 protocol (display updates + touch input); `livetiming/` — F1 SignalR live
 timing client (delta-merging feed state); `openf1/` — OpenF1 poller;
