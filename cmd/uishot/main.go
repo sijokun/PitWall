@@ -81,7 +81,7 @@ func main() {
 		Buttons: []string{"RETRY", "SETTINGS", "EXIT"},
 	}))
 	save("build/shot_settings.png", r.RenderSettings(ui.SettingsView{
-		ShowBestSectors: true, DelaySeconds: 0, ReplaySpeed: 60, LiveDelayShown: true,
+		ShowBestSectors: true, DelaySeconds: 47, ReplaySpeed: 60, LiveDelayShown: true,
 		CanExit: true, CanBack: true,
 	}))
 

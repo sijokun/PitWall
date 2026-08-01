@@ -196,9 +196,7 @@ func loadSettings(defSpeed float64, defMode int) Settings {
 	if s.ReplaySpeed <= 0 {
 		s.ReplaySpeed = defSpeed
 	}
-	if s.DelaySeconds < 0 {
-		s.DelaySeconds = 0
-	}
+	s.DelaySeconds = ui.ClampDelay(s.DelaySeconds)
 	if s.RedrawSeconds <= 0 {
 		s.RedrawSeconds = 1
 	}
@@ -814,17 +812,21 @@ func (a *App) Touch(ctx context.Context, x, y int) {
 			a.saveSettings()
 			a.markDirty()
 		case ui.SettingDelay:
-			if idx >= 0 && idx < len(ui.DelayOptions) {
-				sec := ui.DelayOptions[idx]
+			// The stepper's middle cell is the value readout, not a button.
+			if idx >= 0 && idx < len(ui.DelaySteps) && ui.DelaySteps[idx] != 0 {
 				a.mu.Lock()
+				sec := ui.ClampDelay(a.set.DelaySeconds + ui.DelaySteps[idx])
+				changed := sec != a.set.DelaySeconds
 				a.set.DelaySeconds = sec
 				live := a.live
 				a.mu.Unlock()
-				if live != nil {
-					live.SetDelay(time.Duration(sec) * time.Second)
+				if changed {
+					if live != nil {
+						live.SetDelay(time.Duration(sec) * time.Second)
+					}
+					a.saveSettings()
+					a.markDirty()
 				}
-				a.saveSettings()
-				a.markDirty()
 			}
 		case ui.SettingSpeed:
 			if idx >= 0 && idx < len(ui.SpeedOptions) {

@@ -175,8 +175,29 @@ func HitHeaderButton(x, y int) int {
 // SpeedOptions are the replay speeds offered on the settings screen.
 var SpeedOptions = []float64{1, 2, 5, 10, 30, 60, 120}
 
-// DelayOptions are the live-delay choices (seconds) for TV sync.
-var DelayOptions = []int{0, 5, 10, 15, 30, 45, 60, 90}
+// DelaySteps back the live-delay stepper: a row of -/+ buttons around the
+// current value, so any number of seconds is reachable rather than a fixed
+// set. The zero entry is the value readout itself, which is not a button.
+var DelaySteps = []int{-10, -5, -1, 0, 1, 5, 10}
+
+// DelayValueIndex is the position of the value readout within DelaySteps.
+const DelayValueIndex = 3
+
+// DelayMaxSeconds caps the live delay. Feed events are held in memory until
+// they are due, so an unbounded delay would grow the pending buffer without
+// limit; 10 minutes is far beyond any real broadcast lag.
+const DelayMaxSeconds = 600
+
+// ClampDelay keeps a delay in seconds within the supported range.
+func ClampDelay(sec int) int {
+	if sec < 0 {
+		return 0
+	}
+	if sec > DelayMaxSeconds {
+		return DelayMaxSeconds
+	}
+	return sec
+}
 
 // RedrawOptions are the screen-redraw interval choices (seconds).
 var RedrawOptions = []int{1, 3, 5, 10}
@@ -284,7 +305,7 @@ func settingsChipCount(section int) int {
 	case SettingHeaderLine:
 		return len(HeaderLineLabels)
 	case SettingDelay:
-		return len(DelayOptions)
+		return len(DelaySteps)
 	case SettingSpeed:
 		return len(SpeedOptions)
 	case SettingMarker:
@@ -2079,24 +2100,29 @@ func (r *Renderer) RenderSettings(v SettingsView) *image.RGBA {
 	r.drawSettingsSection(img, 2, "OVERALL BEST SECTORS", []string{"ON", "OFF"}, bestSel,
 		"Show the fastest S1/S2/S3 of the session above the sector columns.")
 
-	// Section 3 — live delay (TV sync).
-	delayChips := make([]string, len(DelayOptions))
-	delaySel := -1
-	for i, s := range DelayOptions {
-		if s == 0 {
-			delayChips[i] = "OFF"
-		} else {
-			delayChips[i] = fmt.Sprintf("%ds", s)
-		}
-		if s == v.DelaySeconds {
-			delaySel = i
+	// Section 3 — live delay (TV sync). A stepper rather than fixed choices:
+	// -/+ buttons either side of the current value, which is highlighted to
+	// read as a field rather than another button.
+	delayChips := make([]string, len(DelaySteps))
+	for i, step := range DelaySteps {
+		switch {
+		case i == DelayValueIndex:
+			if v.DelaySeconds == 0 {
+				delayChips[i] = "OFF"
+			} else {
+				delayChips[i] = fmt.Sprintf("%ds", v.DelaySeconds)
+			}
+		case step > 0:
+			delayChips[i] = fmt.Sprintf("+%d", step)
+		default:
+			delayChips[i] = fmt.Sprintf("%d", step)
 		}
 	}
-	delayNote := "Hold the live feed back to match your TV broadcast delay."
+	delayNote := "Hold the live feed back to match your TV broadcast delay. Tap -/+ to adjust by 1, 5 or 10 seconds."
 	if !v.LiveDelayShown {
 		delayNote += " (applies when a live session is connected)"
 	}
-	r.drawSettingsSection(img, 3, "LIVE DELAY (TV SYNC)", delayChips, delaySel, delayNote)
+	r.drawSettingsSection(img, 3, "LIVE DELAY (TV SYNC)", delayChips, DelayValueIndex, delayNote)
 
 	// Section 4 — replay speed.
 	speedChips := make([]string, len(SpeedOptions))

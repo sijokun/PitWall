@@ -98,6 +98,12 @@ finer dithers away on the Kaleido panel.
   two big lines (with its flag chip, wrapping if long) and the session name
   moves to the small strip at the very top, so incidents are readable at a
   glance from any tab.
+- **Live delay (TV sync)** (Settings) holds the live feed back so timing
+  matches a broadcast that runs behind the feed. It's a stepper rather than a
+  fixed list — tap `-`/`+` to move the value by 1, 5 or 10 seconds, so any
+  delay up to 10 minutes is reachable; `OFF` (0) is realtime. Events are held
+  in memory until due, so raising it costs a little memory and takes effect
+  immediately. Live sessions only; replays are unaffected.
 - **Tabs** (bottom bar): **TIMING** — the leaderboard; **MAP** — the circuit
   outline (from the MultiViewer API) with live car positions from the
   `Position.z` feed; **RACE CONTROL** — the full message log with flags.
