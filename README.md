@@ -11,9 +11,10 @@ Shows for the current session: positions, intervals and gaps, last lap times
 status flags, and race control messages.
 
 <p align="center">
-  <img src="docs/screenshot-timing.png" alt="Timing tab" width="45%">
-  <img src="docs/screenshot-racecontrol.png" alt="Race control tab" width="45%">
+  <img src="docs/screenshot-timing.png" alt="Timing tab — 2025 Hungarian GP" width="45%">
+  <img src="docs/screenshot-racecontrol.png" alt="Race control tab — 2025 Hungarian GP" width="45%">
 </p>
+<p align="center"><em>The timing and race control tabs, replaying the 2025 Hungarian Grand Prix.</em></p>
 
 ## Data sources
 
