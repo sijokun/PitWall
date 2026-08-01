@@ -189,3 +189,10 @@ An unofficial, non-commercial hobby project. Not associated with, endorsed by
 or affiliated with Formula 1, the FIA or reMarkable. F1, FORMULA 1 and related
 marks are trademarks of Formula One Licensing BV. Installing XOVI/AppLoad and
 enabling developer mode is at your own risk and may void your warranty.
+
+## AI usage
+
+Parts of this project — application code, documentation and the repository
+setup — were written with [Claude Code](https://claude.com/claude-code)
+(Anthropic). Everything is reviewed, built and tested by a human before it
+lands, and the design decisions are the author's. Bugs are the author's too.
