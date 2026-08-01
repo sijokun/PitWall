@@ -1,0 +1,17 @@
+# Secrets
+.env
+
+# Build output (binaries, generated icons, screenshots, logs)
+/build/
+/f1telemetry
+/livedebug
+/devapp
+/preview
+
+# Scratch artifacts
+*.txr
+out.png
+*.log
+
+# macOS
+.DS_Store

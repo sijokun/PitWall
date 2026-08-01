@@ -1,0 +1,7 @@
+{
+    "name": "F1 Telemetry",
+    "application": "f1telemetry",
+    "qtfb": true,
+    "aspectRatio": "original",
+    "args": ["-speed", "1"]
+}
