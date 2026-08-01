@@ -11,6 +11,7 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"log"
 	"os"
 	"sync"
@@ -72,7 +73,17 @@ func main() {
 	replay := flag.String("replay", "", "replay a recorded fastf1 save file instead of connecting")
 	speed := flag.Float64("speed", 60, "replay speed factor")
 	minRedraw := flag.Duration("min-redraw", 300*time.Millisecond, "minimum interval between redraws")
+	screen := flag.String("screen", "", "simulate a panel of WxH (default: Paper Pro 1620x2160)")
 	flag.Parse()
+
+	// Before app.New: the renderer bakes in font sizes when it is built.
+	if *screen != "" {
+		var w, h int
+		if _, err := fmt.Sscanf(*screen, "%dx%d", &w, &h); err != nil {
+			log.Fatalf("bad -screen %q: want WxH, e.g. 1404x1872", *screen)
+		}
+		ui.SetScreen(w, h)
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

@@ -14,6 +14,7 @@ import (
 	"bytes"
 	"context"
 	"flag"
+	"fmt"
 	"log"
 	"os"
 	"sync"
@@ -21,6 +22,7 @@ import (
 
 	"github.com/sijokun/PitWall/app"
 	"github.com/sijokun/PitWall/qtfb"
+	"github.com/sijokun/PitWall/ui"
 )
 
 type fbDisplay struct {
@@ -92,15 +94,31 @@ func main() {
 	source := flag.String("source", "auto", "data source: auto | live | openf1")
 	speed := flag.Float64("speed", 60, "replay speed factor")
 	minRedraw := flag.Duration("min-redraw", time.Second, "minimum interval between e-ink redraws")
+	screen := flag.String("screen", "", "panel size WxH (default: Paper Pro 1620x2160)")
 	flag.Parse()
+
+	// The layout adapts to the panel, but AppLoad's protocol never reports its
+	// size, so a non-Paper-Pro device has to be told. Do this before anything
+	// builds a renderer: the font sizes are fixed at that point.
+	if *screen != "" {
+		var w, h int
+		if _, err := fmt.Sscanf(*screen, "%dx%d", &w, &h); err != nil {
+			log.Fatalf("bad -screen %q: want WxH, e.g. 1404x1872", *screen)
+		}
+		ui.SetScreen(w, h)
+	}
 
 	fb, err := qtfb.Connect(qtfb.KeyFromEnv(), qtfb.FmtRMPPRGB565)
 	if err != nil {
 		log.Fatalf("qtfb: %v", err)
 	}
 	defer fb.Close()
+	fb.Width, fb.Height = ui.Width, ui.Height
 	if need := fb.Width * fb.Height * 2; len(fb.Shm) < need {
-		log.Fatalf("qtfb: shm too small: %d < %d (unexpected framebuffer config)", len(fb.Shm), need)
+		// The shared buffer is width*height*2 for RGB565, so its size is the
+		// one clue the server does give us about the real panel.
+		log.Fatalf("qtfb: shm is %d bytes but %dx%d needs %d — pass -screen WxH for this device's panel",
+			len(fb.Shm), fb.Width, fb.Height, need)
 	}
 	fb.SetRefreshMode(qtfb.RefreshContent)
 

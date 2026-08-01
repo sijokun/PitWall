@@ -7,6 +7,7 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"image/png"
 	"log"
 	"os"
@@ -30,8 +31,16 @@ func main() {
 	tabName := flag.String("tab", "timing", "tab to render: timing | map | rc")
 	circuitKey := flag.Int("circuit", 0, "override MultiViewer circuit key for the map tab")
 	circuitYear := flag.Int("year", 2025, "circuit year for -circuit")
+	screen := flag.String("screen", "", "panel size WxH (default: Paper Pro 1620x2160)")
 	into := flag.Duration("into", 0, "with -source openf1: render this far into the session (e.g. 60m) instead of its final state")
 	flag.Parse()
+	if *screen != "" {
+		var w, h int
+		if _, err := fmt.Sscanf(*screen, "%dx%d", &w, &h); err != nil {
+			log.Fatalf("bad -screen %q: want WxH", *screen)
+		}
+		ui.SetScreen(w, h)
+	}
 	dnsfix.Install()
 
 	ctx, cancel := context.WithCancel(context.Background())

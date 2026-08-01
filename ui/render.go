@@ -26,31 +26,98 @@ import (
 	"github.com/sijokun/PitWall/model"
 )
 
+// The layout is authored against the reMarkable Paper Pro's panel and scaled
+// to whatever screen is actually in use. Every length below is a reference
+// number; px() converts one to device pixels.
 const (
-	Width  = 1620
-	Height = 2160
-	margin = 60
+	RefWidth  = 1620
+	RefHeight = 2160
+)
 
-	tabBarH   = 130
-	tabBarTop = Height - tabBarH
+// Width and Height are the panel size in pixels, and scale is how much the
+// reference layout is stretched to fill it. Set them with SetScreen before
+// building a Renderer; they default to the Paper Pro.
+var (
+	Width  = RefWidth
+	Height = RefHeight
+	scale  = 1.0
+)
 
-	closeX0, closeY0 = Width - margin - 300, margin - 8
-	closeX1, closeY1 = Width - margin, margin + 68
+// px scales a length authored at the reference size to device pixels.
+func px(v int) int { return int(math.Round(float64(v) * scale)) }
+
+// SetScreen adapts the layout to a panel of w x h pixels. The scale is
+// uniform (the smaller of the two ratios) so text and circles keep their
+// proportions; edge-anchored elements still use the full width and height,
+// so a panel of a different aspect gains margin rather than distortion.
+// Call it before NewRenderer — the font sizes are baked in at that point.
+func SetScreen(w, h int) {
+	if w <= 0 || h <= 0 {
+		return
+	}
+	Width, Height = w, h
+	sw := float64(w) / float64(RefWidth)
+	sh := float64(h) / float64(RefHeight)
+	scale = math.Min(sw, sh)
+	applyLayout()
+}
+
+// Layout lengths, all derived from the reference design by applyLayout.
+var (
+	margin int
+
+	tabBarH   int
+	tabBarTop int
+
+	closeX0, closeY0 int
+	closeX1, closeY1 int
 
 	// Browser top-right button row (right-aligned, indexed from the right).
-	btnW, btnGap = 280, 24
+	btnW, btnGap int
 
-	listRowH = 110
+	listRowH int
 
 	// Browse-screen list area (no tab bar on those screens).
-	browseTop    = 300
-	browseBottom = Height - 130
-	browseRowMin = 62
+	browseTop    int
+	browseBottom int
+	browseRowMin int
 
 	// Timing table geometry (fixed header height).
-	timingRowsTop = margin + 236
-	timingRowH    = 78
+	timingRowsTop int
+	timingRowH    int
 )
+
+func init() { applyLayout() }
+
+// applyLayout recomputes every derived length for the current scale. Widths
+// and heights come from px(); positions anchored to an edge are measured from
+// the real Width/Height so they hug the panel on any aspect ratio.
+func applyLayout() {
+	margin = px(60)
+
+	tabBarH = px(130)
+	tabBarTop = Height - tabBarH
+
+	closeX0, closeY0 = Width-margin-px(300), margin-px(8)
+	closeX1, closeY1 = Width-margin, margin+px(68)
+
+	btnW, btnGap = px(280), px(24)
+
+	listRowH = px(110)
+
+	browseTop = px(300)
+	browseBottom = Height - px(130)
+	browseRowMin = px(62)
+
+	timingRowsTop = margin + px(236)
+	timingRowH = px(78)
+
+	applyPopupLayout()
+	applySettingsLayout()
+	applyGearLayout()
+	applyMapLayout()
+	applyWaitLayout()
+}
 
 // HitTimingRow maps a touch on the timing tab to a table row index
 // (bound-check against the standings length).
@@ -109,14 +176,23 @@ func HitReplayClock(x, y int) bool {
 var SeekMinutes = []int{-10, -5, -1, 1, 5, 10}
 
 // Time popup geometry: a centred panel with one row of seek buttons.
-const (
-	timePopW   = 1120
-	timePopH   = 420
-	timePopY   = 420
-	seekBtnW   = 160
-	seekBtnH   = 104
-	seekBtnGap = 20
+var (
+	timePopW   int
+	timePopH   int
+	timePopY   int
+	seekBtnW   int
+	seekBtnH   int
+	seekBtnGap int
 )
+
+func applyPopupLayout() {
+	timePopW = px(1120)
+	timePopH = px(420)
+	timePopY = px(420)
+	seekBtnW = px(160)
+	seekBtnH = px(104)
+	seekBtnGap = px(20)
+}
 
 // timePopRect returns the popup panel's rect.
 func timePopRect() (x0, y0, x1, y1 int) {
@@ -257,15 +333,38 @@ type SettingsView struct {
 
 // Settings screen geometry: each section is a label + a row of chips + a
 // caption. setSecGap is as tight as the caption/next-label pair allows.
-const (
-	setSecTop  = 286 // first section's label baseline
-	setSecGap  = 168 // vertical distance between section labels
-	setChipTop = 22  // chip row top, below the section label
-	setChipW   = 150
-	setChipH   = 66
-	setChipGap = 22
-	setNoteDy  = 34 // caption baseline below the chip row
+var (
+	setSecTop  int // first section's label baseline
+	setSecGap  int // vertical distance between section labels
+	setChipTop int // chip row top, below the section label
+	setChipW   int
+	setChipH   int
+	setChipGap int
+	setNoteDy  int // caption baseline below the chip row
 )
+
+// applySettingsLayout also squeezes the section pitch when the panel is too
+// short for the reference spacing, so every section still fits on one screen.
+func applySettingsLayout() {
+	setSecTop = px(286)
+	setSecGap = px(168)
+	setChipTop = px(22)
+	setChipW = px(150)
+	setChipH = px(66)
+	setChipGap = px(22)
+	setNoteDy = px(34)
+
+	// Squeeze the pitch only if the last section would otherwise run off the
+	// bottom; at the reference size everything fits and this is a no-op.
+	if n := len(settingsSections); n > 1 {
+		tail := setChipTop + setChipH + setNoteDy
+		if avail := Height - px(20) - setSecTop - tail; avail > 0 {
+			if fit := avail / (n - 1); fit < setSecGap {
+				setSecGap = fit
+			}
+		}
+	}
+}
 
 // settingsChipW is the chip width of a section — wider for the few sections
 // whose options are words rather than numbers.
@@ -334,11 +433,17 @@ func HitSettingsControl(x, y int) (Setting, int) {
 // Settings gear icon, top-right of the header on live/map/race-control views.
 // gearCY is set so the icon's top edge lines up with the source-text row (its
 // baseline is at y=42, so its top is ~20 from the screen top).
-const (
-	gearCX = Width - margin - 18
-	gearCY = 47
-	gearR  = 20
+var (
+	gearCX int
+	gearCY int
+	gearR  int
 )
+
+func applyGearLayout() {
+	gearCX = Width - margin - px(18)
+	gearCY = px(47)
+	gearR = px(20)
+}
 
 // HitSettingsGear reports whether a touch hits the header settings gear.
 func HitSettingsGear(x, y int) bool {
@@ -423,15 +528,17 @@ func mustFace(ttf []byte, size float64) font.Face {
 	return face
 }
 
+// NewRenderer builds the faces at the current scale, so call SetScreen first
+// when targeting a panel other than the Paper Pro.
 func NewRenderer() *Renderer {
 	return &Renderer{
-		title:     mustFace(gobold.TTF, 72),
-		h1:        mustFace(gobold.TTF, 44),
-		row:       mustFace(goregular.TTF, 40),
-		small:     mustFace(goregular.TTF, 30),
-		mono:      mustFace(gomono.TTF, 40),
-		monoSmall: mustFace(gomono.TTF, 30),
-		monoTiny:  mustFace(gomono.TTF, 24),
+		title:     mustFace(gobold.TTF, 72*scale),
+		h1:        mustFace(gobold.TTF, 44*scale),
+		row:       mustFace(goregular.TTF, 40*scale),
+		small:     mustFace(goregular.TTF, 30*scale),
+		mono:      mustFace(gomono.TTF, 40*scale),
+		monoSmall: mustFace(gomono.TTF, 30*scale),
+		monoTiny:  mustFace(gomono.TTF, 24*scale),
 	}
 }
 
@@ -587,11 +694,11 @@ func (r *Renderer) drawLapPopup(img *image.RGBA, st model.State, num int) {
 	if rows == 0 {
 		rows = 1 // room for the "no laps" note
 	}
-	const x0, x1 = 220, Width - 220
-	panelH := 150 + rows*56 + 40
+	x0, x1 := px(220), Width-px(220)
+	panelH := px(150) + rows*px(56) + px(40)
 	y0 := (tabBarTop - panelH) / 2
-	if y0 < 200 {
-		y0 = 200
+	if y0 < px(200) {
+		y0 = px(200)
 	}
 
 	// Panel with border.
@@ -608,12 +715,12 @@ func (r *Renderer) drawLapPopup(img *image.RGBA, st model.State, num int) {
 	r.text(img, r.h1, black, x0+70, y0+70, fmt.Sprintf("%s — LAST LAPS", name))
 	r.textRight(img, r.small, gray, x1-30, y0+70, "tap to close")
 
-	const (
-		cLap  = 120
-		cS1   = 420
-		cS2   = 620
-		cS3   = 820
-		cTime = 1100
+	var (
+		cLap  = px(120)
+		cS1   = px(420)
+		cS2   = px(620)
+		cS3   = px(820)
+		cTime = px(1100)
 	)
 	hy := y0 + 130
 	r.text(img, r.small, gray, x0+cLap-60, hy, "LAP")
@@ -665,7 +772,7 @@ func (r *Renderer) drawLapPopup(img *image.RGBA, st model.State, num int) {
 			tv = "-:--.-"
 		}
 		r.textRight(img, r.monoSmall, tcol, x0+cTime, y, tv)
-		y += 56
+		y += px(56)
 	}
 }
 
@@ -703,19 +810,19 @@ func (r *Renderer) header(img *image.RGBA, st model.State, opts ViewOptions) int
 		if len(status) > 80 {
 			status = status[:80]
 		}
-		r.text(img, r.small, gray, margin, 42, status)
+		r.text(img, r.small, gray, margin, px(42), status)
 	case st.IsReplay:
 		x := margin
 		pre := "source: " + st.Source + " · "
-		r.text(img, r.small, gray, x, 42, pre)
+		r.text(img, r.small, gray, x, px(42), pre)
 		x += font.MeasureString(r.small, pre).Ceil()
 		clock := st.LastUpdate.Local().Format("15:04:05")
-		r.text(img, r.monoSmall, black, x, 42, clock)
+		r.text(img, r.monoSmall, black, x, px(42), clock)
 		cw := font.MeasureString(r.monoSmall, clock).Ceil()
-		fillRect(img, x, 50, cw, 2, black) // underline: this is tappable
-		r.text(img, r.small, gray, x+cw+16, 42, "· tap to jump")
+		fillRect(img, x, px(50), cw, px(2), black) // underline: this is tappable
+		r.text(img, r.small, gray, x+cw+px(16), px(42), "· tap to jump")
 	default:
-		r.text(img, r.small, gray, margin, 42,
+		r.text(img, r.small, gray, margin, px(42),
 			"source: "+st.Source+" · "+st.LastUpdate.Local().Format("15:04:05"))
 	}
 	if rcMsg != "" {
@@ -730,7 +837,7 @@ func (r *Renderer) header(img *image.RGBA, st model.State, opts ViewOptions) int
 	y := margin + 60
 	// Shrink the big line so it clears the top-right elements: the gear (plus
 	// the back arrow during a replay) and, when flying, the flag chip.
-	right := Width - margin - 80 // gear
+	right := Width - margin - px(80) // gear
 	// Track-status chip, top right. Sectors under yellow imply the flag even
 	// when the status feed has not caught up.
 	trackFlag := currentFlag(st)
@@ -738,9 +845,9 @@ func (r *Renderer) header(img *image.RGBA, st model.State, opts ViewOptions) int
 		trackFlag = "YELLOW"
 	}
 	if trackFlag != "" {
-		right -= font.MeasureString(r.h1, trackFlag).Ceil() + 72
+		right -= font.MeasureString(r.h1, trackFlag).Ceil() + px(72)
 	}
-	avail := right - margin - 30
+	avail := right - margin - px(30)
 
 	// Second line: the venue (or the message's overflow), with the lap
 	// counter right-aligned and, under the flag chip, which sectors it is
@@ -752,11 +859,11 @@ func (r *Renderer) header(img *image.RGBA, st model.State, opts ViewOptions) int
 		if st.TotalLaps > 0 {
 			lap = fmt.Sprintf("LAP %d/%d", st.LeaderLap, st.TotalLaps)
 		}
-		subW -= font.MeasureString(r.h1, lap).Ceil() + 40
+		subW -= font.MeasureString(r.h1, lap).Ceil() + px(40)
 	}
 	sectors := yellowSectorLabel(st)
 	if sectors != "" {
-		subW -= font.MeasureString(r.row, sectors).Ceil() + 40
+		subW -= font.MeasureString(r.row, sectors).Ceil() + px(40)
 	}
 
 	if rcMsg != "" {
@@ -765,9 +872,9 @@ func (r *Renderer) header(img *image.RGBA, st model.State, opts ViewOptions) int
 		// header's two-line box rather than ellipsizing it away.
 		chipW := 0
 		if rcFlag != "" {
-			chipW = font.MeasureString(r.row, rcFlag).Ceil() + 48
-			fillRect(img, margin, y-40, chipW-20, 54, flagColor(rcFlag))
-			r.text(img, r.row, white, margin+14, y, rcFlag)
+			chipW = font.MeasureString(r.row, rcFlag).Ceil() + px(48)
+			fillRect(img, margin, y-px(40), chipW-px(20), px(54), flagColor(rcFlag))
+			r.text(img, r.row, white, margin+px(14), y, rcFlag)
 		}
 		face, lineH, lines := r.fitMessage(rcMsg, avail-chipW, subW)
 		for i, line := range lines {
@@ -780,14 +887,14 @@ func (r *Renderer) header(img *image.RGBA, st model.State, opts ViewOptions) int
 	} else {
 		r.text(img, r.fitFace(title, avail), black, margin, y, r.fitText(title, avail))
 		if lines := wrapWidth(r.row, sub, subW, subW, 1); len(lines) > 0 {
-			r.text(img, r.row, gray, margin, y+56, lines[0])
+			r.text(img, r.row, gray, margin, y+px(56), lines[0])
 		}
 	}
-	y += 56
+	y += px(56)
 	sx := Width - margin
 	if lap != "" {
 		r.textRight(img, r.h1, black, sx, y, lap)
-		sx -= font.MeasureString(r.h1, lap).Ceil() + 40
+		sx -= font.MeasureString(r.h1, lap).Ceil() + px(40)
 	}
 	if sectors != "" {
 		r.textRight(img, r.row, flagColor("YELLOW"), sx, y, sectors)
@@ -795,33 +902,33 @@ func (r *Renderer) header(img *image.RGBA, st model.State, opts ViewOptions) int
 
 	fx := Width - margin
 	if trackFlag != "" {
-		fw := font.MeasureString(r.h1, trackFlag).Ceil() + 48
-		fillRect(img, fx-fw, margin-8, fw, 76, flagColor(trackFlag))
-		r.text(img, r.h1, white, fx-fw+24, margin+46, trackFlag)
+		fw := font.MeasureString(r.h1, trackFlag).Ceil() + px(48)
+		fillRect(img, fx-fw, margin-px(8), fw, px(76), flagColor(trackFlag))
+		r.text(img, r.h1, white, fx-fw+px(24), margin+px(46), trackFlag)
 	}
 	// Settings gear: same top-right spot in every mode.
 	r.drawGear(img, gearCX, gearCY, gearR, gray)
 
-	y += 46
-	fillRect(img, margin, y, Width-2*margin, 4, black)
-	return y + 54
+	y += px(46)
+	fillRect(img, margin, y, Width-2*margin, px(4), black)
+	return y + px(54)
 }
 
 // ---- Timing tab ----
 
 func (r *Renderer) renderTiming(img *image.RGBA, st model.State, y int, showTcam bool) {
-	const (
+	var (
 		colPos  = margin
-		colBar  = margin + 80
-		colDrv  = margin + 110
-		colTyre = margin + 330
-		colInt  = margin + 620 // right edge
-		colGap  = margin + 800 // right edge
-		colS1   = margin + 950 // right edges of the three sector columns
-		colS2   = margin + 1085
-		colS3   = margin + 1220
-		colLast = Width - margin - 90 // right edge
-		colPit  = Width - margin      // right edge
+		colBar  = margin + px(80)
+		colDrv  = margin + px(110)
+		colTyre = margin + px(330)
+		colInt  = margin + px(620) // right edge
+		colGap  = margin + px(800) // right edge
+		colS1   = margin + px(950) // right edges of the three sector columns
+		colS2   = margin + px(1085)
+		colS3   = margin + px(1220)
+		colLast = Width - margin - px(90) // right edge
+		colPit  = Width - margin          // right edge
 	)
 	race := isRace(st)
 	hdr := gray
@@ -842,31 +949,34 @@ func (r *Renderer) renderTiming(img *image.RGBA, st model.State, y int, showTcam
 	// (purple), in the gap between the header and the first row.
 	for si, right := range [3]int{colS1, colS2, colS3} {
 		if v := st.BestSectors[si]; v != "" {
-			r.textRight(img, r.monoTiny, purple, right, y+34, v)
+			r.textRight(img, r.monoTiny, purple, right, y+px(34), v)
 		}
 	}
 	r.textRight(img, r.small, hdr, colLast, y, "LAST")
 	// Session overall-best lap under the LAST label, matching the per-sector
 	// bests to its left. The FL marker on the row says who is holding it.
 	if st.BestLap != "" {
-		r.textRight(img, r.monoTiny, purple, colLast, y+34, st.BestLap)
+		r.textRight(img, r.monoTiny, purple, colLast, y+px(34), st.BestLap)
 	}
 	if race {
 		r.textRight(img, r.small, hdr, colPit, y, "PIT")
 	} else {
 		r.textRight(img, r.small, hdr, colPit, y, "LAPS")
 	}
-	y += 20
+	y += px(20)
 
-	rowH := 78
+	rowH := timingRowH
+	// Draw only the rows that fit above the tab bar, so a shorter panel drops
+	// the tail of the field instead of painting over the tabs.
+	maxRows := (tabBarTop - y) / rowH
 	for i, s := range st.Standings {
-		if i >= 22 {
+		if i >= maxRows {
 			break
 		}
 		ry := y + i*rowH
-		base := ry + 54
+		base := ry + px(54)
 		if i%2 == 1 {
-			fillRect(img, margin-16, ry+6, Width-2*margin+32, rowH-6, stripe)
+			fillRect(img, margin-px(16), ry+px(6), Width-2*margin+px(32), rowH-px(6), stripe)
 		}
 		pos := "-"
 		if s.Position > 0 {
@@ -876,27 +986,27 @@ func (r *Renderer) renderTiming(img *image.RGBA, st model.State, y int, showTcam
 		// Team color bar; a yellow frame around it marks the yellow-T-cam
 		// driver of the team so teammates are distinguishable here too.
 		if showTcam && yellowTcam[s.Number] {
-			fillRect(img, colBar-5, ry+9, 24, rowH-12, tcamYellow)
+			fillRect(img, colBar-px(5), ry+px(9), px(24), rowH-px(12), tcamYellow)
 		}
-		fillRect(img, colBar, ry+14, 14, rowH-22, teamColor(s.TeamColour))
+		fillRect(img, colBar, ry+px(14), px(14), rowH-px(22), teamColor(s.TeamColour))
 		nameCol := color.Color(black)
 		if s.KnockedOut || s.Retired {
 			nameCol = gray
 		}
 		r.text(img, r.h1, nameCol, colDrv, base, s.Acronym)
 		if !strings.HasPrefix(s.Acronym, "#") {
-			r.text(img, r.small, gray, colDrv+125, base, fmt.Sprint(s.Number))
+			r.text(img, r.small, gray, colDrv+px(125), base, fmt.Sprint(s.Number))
 		}
 
 		if s.Compound != "" {
 			cc := compoundColor(s.Compound)
-			cx, cy, rad := colTyre+20, ry+rowH/2, 22
+			cx, cy, rad := colTyre+px(20), ry+rowH/2, px(22)
 			fillCircle(img, cx, cy, rad, cc)
 			letter := s.Compound[:1]
 			lw := font.MeasureString(r.h1, letter).Ceil()
-			r.text(img, r.h1, white, cx-lw/2, cy+15, letter)
+			r.text(img, r.h1, white, cx-lw/2, cy+px(15), letter)
 			if s.TyreLaps > 0 {
-				r.text(img, r.small, gray, colTyre+52, base, fmt.Sprintf("%d", s.TyreLaps))
+				r.text(img, r.small, gray, colTyre+px(52), base, fmt.Sprintf("%d", s.TyreLaps))
 			}
 		}
 
@@ -978,7 +1088,7 @@ func (r *Renderer) renderTiming(img *image.RGBA, st model.State, y int, showTcam
 		// laps, unlike the purple LAST time, which only marks a lap that was
 		// fastest at the moment it was set.
 		if st.BestLapBy != 0 && s.Number == st.BestLapBy {
-			fillCircle(img, colLast+30, ry+rowH/2, 10, purple)
+			fillCircle(img, colLast+px(30), ry+rowH/2, px(10), purple)
 		}
 		if race {
 			r.textRight(img, r.small, gray, colPit, base, fmt.Sprint(s.Pits))
@@ -1000,16 +1110,34 @@ func isRace(st model.State) bool {
 
 // Map driver-filter geometry: an ALL/NONE control and a grid of team-colored
 // number chips at the top of the map, toggling which cars are drawn.
-const (
-	mapFilterTop   = timingRowsTop - 20 // top of the filter strip (= map body top)
-	mapFilterBtnW  = 160
-	mapFilterBtnH  = 56
-	mapChipD       = 54
-	mapChipGapX    = 30
-	mapChipGapY    = 18
-	mapChipsPerRow = 15
-	mapChipsTop    = mapFilterTop + mapFilterBtnH + 22
+var (
+	mapFilterTop   int // top of the filter strip (= map body top)
+	mapFilterBtnW  int
+	mapFilterBtnH  int
+	mapChipD       int
+	mapChipGapX    int
+	mapChipGapY    int
+	mapChipsPerRow int
+	mapChipsTop    int
 )
+
+// applyMapLayout also drops the driver chips per row when the panel is too
+// narrow to hold the reference count at the scaled chip pitch.
+func applyMapLayout() {
+	mapFilterTop = timingRowsTop - px(20)
+	mapFilterBtnW = px(160)
+	mapFilterBtnH = px(56)
+	mapChipD = px(54)
+	mapChipGapX = px(30)
+	mapChipGapY = px(18)
+	mapChipsPerRow = 15
+	if pitch := mapChipD + mapChipGapX; pitch > 0 {
+		if n := (Width - 2*margin + mapChipGapX) / pitch; n < mapChipsPerRow {
+			mapChipsPerRow = max(1, n)
+		}
+	}
+	mapChipsTop = mapFilterTop + mapFilterBtnH + px(22)
+}
 
 // MapFilter identifies a control tapped in the map driver filter.
 type MapFilter int
@@ -1252,7 +1380,7 @@ func (r *Renderer) renderMap(img *image.RGBA, st model.State, tm *model.TrackMap
 
 	// Fit the rotated outline into the drawing area below the filter strip.
 	areaX0, areaY0 := float64(margin+30), float64(filterBottom+30)
-	areaX1, areaY1 := float64(Width-margin-30), float64(tabBarTop-100)
+	areaX1, areaY1 := float64(Width-margin-px(30)), float64(tabBarTop-px(100))
 
 	rot := tm.Rotation * math.Pi / 180
 	sin, cos := math.Sin(rot), math.Cos(rot)
@@ -1368,7 +1496,7 @@ func (r *Renderer) renderMap(img *image.RGBA, st model.State, tm *model.TrackMap
 			gpsCars++
 		}
 	}
-	note := func(s string) { r.text(img, r.small, gray, margin, tabBarTop-70, s) }
+	note := func(s string) { r.text(img, r.small, gray, margin, tabBarTop-px(70), s) }
 	drawGPS := func() int {
 		drawn := 0
 		for _, cp := range st.CarPositions {
@@ -1603,14 +1731,14 @@ func pointAtPercent(sx, sy, arc []float64, pct float64) (float64, float64) {
 
 func (r *Renderer) renderRaceControl(img *image.RGBA, st model.State, y int) {
 	r.text(img, r.small, gray, margin, y, "RACE CONTROL — LATEST FIRST")
-	y += 56
+	y += px(56)
 	if len(st.RaceControl) == 0 {
 		r.text(img, r.row, gray, margin, y+40, "No race control messages yet.")
 		return
 	}
-	const textX = margin + 130
+	textX := margin + px(130)
 	for _, rc := range st.RaceControl {
-		if y > tabBarTop-80 {
+		if y > tabBarTop-px(80) {
 			break
 		}
 		r.text(img, r.monoSmall, gray, margin, y, rc.Date.Local().Format("15:04"))
@@ -1675,18 +1803,19 @@ func wrapWidth(face font.Face, text string, firstW, restW, maxLines int) []strin
 // ---- Tab bar ----
 
 func (r *Renderer) tabBar(img *image.RGBA, active Tab) {
-	fillRect(img, 0, tabBarTop, Width, 2, black)
+	fillRect(img, 0, tabBarTop, Width, px(2), black)
 	tw := Width / int(numTabs)
+	label := tabBarTop + px(82)
 	for i := Tab(0); i < numTabs; i++ {
 		x := int(i) * tw
 		if i == active {
-			fillRect(img, x, tabBarTop+2, tw, tabBarH-2, black)
-			r.textCenter(img, r.h1, white, x+tw/2, tabBarTop+82, tabNames[i])
+			fillRect(img, x, tabBarTop+px(2), tw, tabBarH-px(2), black)
+			r.textCenter(img, r.h1, white, x+tw/2, label, tabNames[i])
 		} else {
-			r.textCenter(img, r.h1, black, x+tw/2, tabBarTop+82, tabNames[i])
+			r.textCenter(img, r.h1, black, x+tw/2, label, tabNames[i])
 		}
 		if i > 0 {
-			fillRect(img, x, tabBarTop+20, 2, tabBarH-40, light)
+			fillRect(img, x, tabBarTop+px(20), px(2), tabBarH-px(40), light)
 		}
 	}
 }
@@ -1845,12 +1974,12 @@ func (r *Renderer) RenderBrowse(v BrowseView) *image.RGBA {
 		avail = browserBtnX(n-1) - margin - 40
 	}
 	r.text(img, r.fitFace(v.Title, avail), black, margin, y, r.fitText(v.Title, avail))
-	y += 56
+	y += px(56)
 	r.text(img, r.row, gray, margin, y, v.Sub)
 	for i, label := range v.Buttons {
 		r.drawButton(img, browserBtnX(i), label)
 	}
-	y += 46
+	y += px(46)
 	fillRect(img, margin, y, Width-2*margin, 4, black)
 
 	rowH := browseRowH(len(v.Rows))
@@ -1903,13 +2032,21 @@ type WaitingView struct {
 // Waiting-screen geometry. The marching bar is the only thing that moves:
 // on e-ink, one narrow animated band means one small partial update per
 // refresh instead of repainting half the screen.
-const (
-	waitCX     = Width / 2
-	waitTitleY = 880
-	waitBarY   = 1024
-	waitBarW   = 1080
-	waitBarCol = 24 // cells in the marching bar
+var (
+	waitCX     int
+	waitTitleY int
+	waitBarY   int
+	waitBarW   int
 )
+
+const waitBarCol = 24 // cells in the marching bar
+
+func applyWaitLayout() {
+	waitCX = Width / 2
+	waitTitleY = px(880)
+	waitBarY = px(1024)
+	waitBarW = px(1080)
+}
 
 // drawMarchingBar draws the loading animation: a short block of filled cells
 // sweeping left to right, stepping once per tick. It is the only animated
@@ -1935,12 +2072,12 @@ func (r *Renderer) RenderWaiting(v WaitingView) *image.RGBA {
 
 	y := margin + 60
 	r.text(img, r.title, black, margin, y, "F1 TELEMETRY")
-	y += 56
+	y += px(56)
 	r.text(img, r.row, gray, margin, y, "Live mode — following the F1 timing feed")
 	for i, label := range v.Buttons {
 		r.drawButton(img, browserBtnX(i), label)
 	}
-	y += 46
+	y += px(46)
 	fillRect(img, margin, y, Width-2*margin, 4, black)
 
 	r.textCenter(img, r.title, black, waitCX, waitTitleY, "WAITING FOR LIVE SESSION")
@@ -2080,7 +2217,7 @@ func (r *Renderer) RenderSettings(v SettingsView) *image.RGBA {
 
 	y := margin + 60
 	r.text(img, r.title, black, margin, y, "SETTINGS")
-	y += 56
+	y += px(56)
 	r.text(img, r.row, gray, margin, y, "Tap to change · saved automatically")
 	r.drawButton(img, closeX0, "CLOSE")
 	if v.CanExit {
@@ -2089,7 +2226,7 @@ func (r *Renderer) RenderSettings(v SettingsView) *image.RGBA {
 	if v.CanBack {
 		r.drawBackButton(img, settingsBackX(v.CanExit))
 	}
-	y += 46
+	y += px(46)
 	fillRect(img, margin, y, Width-2*margin, 4, black)
 
 	// Section 0 — session mode: follow the live feed or replay a past session.

@@ -2,6 +2,8 @@
 package main
 
 import (
+	"flag"
+	"fmt"
 	"image"
 	"image/png"
 	"log"
@@ -25,6 +27,15 @@ func save(name string, img *image.RGBA) {
 }
 
 func main() {
+	screen := flag.String("screen", "", "panel size WxH (default: Paper Pro 1620x2160)")
+	flag.Parse()
+	if *screen != "" {
+		var w, h int
+		if _, err := fmt.Sscanf(*screen, "%dx%d", &w, &h); err != nil {
+			log.Fatalf("bad -screen %q: want WxH", *screen)
+		}
+		ui.SetScreen(w, h)
+	}
 	r := ui.NewRenderer()
 	save("build/shot_seasons.png", r.RenderBrowse(ui.BrowseView{
 		Title:   "SELECT SEASON",

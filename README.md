@@ -63,6 +63,24 @@ variable, `F1_DNS`, is documented in `.env.example` and below.
 manifest. Replace it with another flat two-tone 256x256 PNG if you like —
 hairlines and gradients dither away on the Kaleido panel.
 
+## Other devices
+
+The app is developed and tested on the reMarkable Paper Pro. The layout is not
+fixed to that panel — it is authored at 1620x2160 and scaled to whatever size
+it is told to use, including fonts, row heights and how many rows fit — but
+AppLoad's protocol never reports the panel size, so another device has to be
+told:
+
+```sh
+./deploy.sh                      # then, in external.manifest.json args:
+"args": ["-screen", "1404x1872"]
+```
+
+If the size is wrong the app exits with what the shared framebuffer implies,
+which is the one clue the protocol does give. Reports from other hardware are
+welcome — see the same flag on `cmd/devapp` and `cmd/preview` to preview a
+size without a tablet.
+
 ## Usage
 
 - **Session mode** (Settings, top section) picks what the app shows:
@@ -153,6 +171,10 @@ go run ./cmd/preview -source openf1 -session 9165
 
 # a chosen point in a session rather than its finished state
 go run ./cmd/preview -source openf1 -session 11342 -into 60m
+
+# check the layout on another panel size
+go run ./cmd/preview -replay testdata/partial_saved_data_2025_04_06.txt \
+    -screen 1404x1872
 
 # render from a recorded session (2025 Japanese GP, from f1stuff/f1-live-data)
 go run ./cmd/preview -replay testdata/partial_saved_data_2025_04_06.txt
