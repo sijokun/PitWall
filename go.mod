@@ -1,4 +1,4 @@
-module f1telemetry
+module github.com/sijokun/PitWall
 
 go 1.22.0
 

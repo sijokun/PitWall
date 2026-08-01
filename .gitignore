@@ -3,7 +3,7 @@
 
 # Build output (binaries, generated icons, screenshots, logs)
 /build/
-/f1telemetry
+/pitwall
 /livedebug
 /devapp
 /preview

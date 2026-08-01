@@ -18,10 +18,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	"f1telemetry/certs"
-	"f1telemetry/dnsfix"
-	"f1telemetry/livetiming"
-	"f1telemetry/model"
+	"github.com/sijokun/PitWall/certs"
+	"github.com/sijokun/PitWall/dnsfix"
+	"github.com/sijokun/PitWall/livetiming"
+	"github.com/sijokun/PitWall/model"
 )
 
 func main() {

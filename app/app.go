@@ -34,13 +34,13 @@ import (
 	"sync/atomic"
 	"time"
 
-	"f1telemetry/certs"
-	"f1telemetry/circuit"
-	"f1telemetry/dnsfix"
-	"f1telemetry/livetiming"
-	"f1telemetry/model"
-	"f1telemetry/openf1"
-	"f1telemetry/ui"
+	"github.com/sijokun/PitWall/certs"
+	"github.com/sijokun/PitWall/circuit"
+	"github.com/sijokun/PitWall/dnsfix"
+	"github.com/sijokun/PitWall/livetiming"
+	"github.com/sijokun/PitWall/model"
+	"github.com/sijokun/PitWall/openf1"
+	"github.com/sijokun/PitWall/ui"
 )
 
 // Display abstracts the output device (qtfb framebuffer or a desktop
@@ -176,7 +176,7 @@ func settingsPath() string {
 	if err != nil {
 		return ""
 	}
-	return filepath.Join(dir, "f1telemetry", "settings.json")
+	return filepath.Join(dir, "pitwall", "settings.json")
 }
 
 // loadSettings reads persisted settings, falling back to defaults (best

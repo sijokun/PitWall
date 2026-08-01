@@ -19,8 +19,8 @@ import (
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/inpututil"
 
-	"f1telemetry/app"
-	"f1telemetry/ui"
+	"github.com/sijokun/PitWall/app"
+	"github.com/sijokun/PitWall/ui"
 )
 
 const windowScale = 2
@@ -90,7 +90,7 @@ func main() {
 	go g.a.Run(ctx)
 
 	ebiten.SetWindowSize(ui.Width/windowScale, ui.Height/windowScale)
-	ebiten.SetWindowTitle("F1 Telemetry — reMarkable simulator")
+	ebiten.SetWindowTitle("Pit Wall — reMarkable simulator")
 	if err := ebiten.RunGame(g); err != nil {
 		log.Fatal(err)
 	}

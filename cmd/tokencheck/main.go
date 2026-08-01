@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"time"
 
-	"f1telemetry/livetiming"
+	"github.com/sijokun/PitWall/livetiming"
 )
 
 func main() {

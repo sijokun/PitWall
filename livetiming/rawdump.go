@@ -14,7 +14,7 @@ import (
 
 	"github.com/gorilla/websocket"
 
-	"f1telemetry/certs"
+	"github.com/sijokun/PitWall/certs"
 )
 
 // RawEvent is one decoded feed message as it came off the SignalR socket,

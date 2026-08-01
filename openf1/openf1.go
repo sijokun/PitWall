@@ -17,7 +17,7 @@ import (
 	"sync"
 	"time"
 
-	"f1telemetry/model"
+	"github.com/sijokun/PitWall/model"
 )
 
 const baseURL = "https://api.openf1.org/v1"

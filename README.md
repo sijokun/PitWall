@@ -1,4 +1,6 @@
-# F1 Telemetry for reMarkable Paper Pro
+# Pit Wall
+
+**Unofficial live Formula 1 timing for the reMarkable Paper Pro.**
 
 Live Formula 1 timing on your reMarkable Paper Pro's color e-ink display.
 Runs as an [AppLoad](https://github.com/asivery/rmpp-appload) app (qtfb
@@ -43,11 +45,11 @@ status flags, and race control messages.
 ### From the Store (recommended)
 
 Once listed in the [remagic](https://github.com/maximerivest/remagic) catalog,
-no toolchain or clone is needed — tap **F1 Telemetry** in the Store app on the
+no toolchain or clone is needed — tap **Pit Wall** in the Store app on the
 tablet, or from your computer:
 
 ```sh
-remagic install f1telemetry
+remagic install pitwall
 ```
 
 ### From source
@@ -61,10 +63,10 @@ Requires Go 1.22+. With the tablet connected over USB (or on the same Wi-Fi):
 
 This cross-compiles a static aarch64 binary (no reMarkable SDK needed) and
 copies it plus `external.manifest.json` and `icon.png` to
-`/home/root/xovi/exthome/appload/f1telemetry/`. The binary is copied aside
+`/home/root/xovi/exthome/appload/pitwall/`. The binary is copied aside
 and moved into place, so a deploy works while the app is running (it picks
 up the new build on the next launch). Then open AppLoad on the device and
-launch **F1 Telemetry**.
+launch **Pit Wall**.
 
 No configuration is required. `.env.example` documents the two optional
 environment variables (`F1_TOKEN`, `F1_DNS`); copy it to `.env` only if you
@@ -173,7 +175,7 @@ protocol (display updates + touch input); `livetiming/` — F1 SignalR live
 timing client (delta-merging feed state); `openf1/` — OpenF1 poller;
 `dnsfix/` — public-DNS resolver override; `certs/` — embedded CA bundle;
 `model/` — shared leaderboard state; `ui/` — renderer (embedded Go fonts,
-RGB565 output); `cmd/f1telemetry/` — the device app; `cmd/preview/` —
+RGB565 output); `cmd/pitwall/` — the device app; `cmd/preview/` —
 desktop preview.
 
 ## License

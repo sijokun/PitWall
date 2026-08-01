@@ -8,8 +8,8 @@ import (
 	"os"
 	"time"
 
-	"f1telemetry/model"
-	"f1telemetry/ui"
+	"github.com/sijokun/PitWall/model"
+	"github.com/sijokun/PitWall/ui"
 )
 
 func save(name string, img *image.RGBA) {

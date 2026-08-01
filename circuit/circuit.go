@@ -13,7 +13,7 @@ import (
 	"sync"
 	"time"
 
-	"f1telemetry/model"
+	"github.com/sijokun/PitWall/model"
 )
 
 const baseURL = "https://api.multiviewer.app/api/v1"

@@ -21,9 +21,9 @@ import (
 	"sync"
 	"time"
 
-	"f1telemetry/certs"
-	"f1telemetry/dnsfix"
-	"f1telemetry/livetiming"
+	"github.com/sijokun/PitWall/certs"
+	"github.com/sijokun/PitWall/dnsfix"
+	"github.com/sijokun/PitWall/livetiming"
 )
 
 func main() {

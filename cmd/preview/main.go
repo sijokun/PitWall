@@ -12,12 +12,12 @@ import (
 	"os"
 	"time"
 
-	"f1telemetry/circuit"
-	"f1telemetry/dnsfix"
-	"f1telemetry/livetiming"
-	"f1telemetry/model"
-	"f1telemetry/openf1"
-	"f1telemetry/ui"
+	"github.com/sijokun/PitWall/circuit"
+	"github.com/sijokun/PitWall/dnsfix"
+	"github.com/sijokun/PitWall/livetiming"
+	"github.com/sijokun/PitWall/model"
+	"github.com/sijokun/PitWall/openf1"
+	"github.com/sijokun/PitWall/ui"
 )
 
 func main() {

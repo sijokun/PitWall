@@ -24,8 +24,8 @@ import (
 
 	"github.com/gorilla/websocket"
 
-	"f1telemetry/certs"
-	"f1telemetry/model"
+	"github.com/sijokun/PitWall/certs"
+	"github.com/sijokun/PitWall/model"
 )
 
 const (

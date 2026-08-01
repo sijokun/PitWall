@@ -23,7 +23,7 @@ import (
 	"golang.org/x/image/font/opentype"
 	"golang.org/x/image/math/fixed"
 
-	"f1telemetry/model"
+	"github.com/sijokun/PitWall/model"
 )
 
 const (
@@ -650,7 +650,7 @@ func (r *Renderer) drawLapPopup(img *image.RGBA, st model.State, num int) {
 
 // header draws the shared title area; returns the y where the body starts.
 func (r *Renderer) header(img *image.RGBA, st model.State, opts ViewOptions) int {
-	title := "F1 LIVE TIMING"
+	title := "PIT WALL"
 	sub := "waiting for session data..."
 	if s := st.Session; s != nil {
 		title = fmt.Sprintf("%s — %s", strings.ToUpper(s.Circuit), strings.ToUpper(s.SessionName))
