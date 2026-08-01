@@ -52,6 +52,11 @@ var topics = []string{
 	"Position.z",
 }
 
+// fallbackSeason is the season fallbackDrivers describes. Car numbers are
+// reassigned every year (the champion takes #1, drivers move teams), so the
+// table is only safe for a feed we have confirmed is from this season.
+const fallbackSeason = 2026
+
 // fallbackDrivers maps car numbers to driver/team info for the current
 // (2026) grid — used only until the feed's DriverList snapshot arrives
 // (e.g. replays recorded mid-session). Live data always wins.
@@ -826,6 +831,13 @@ func (c *Client) Snapshot() model.State {
 	}
 
 	drivers := getMap(c.state["DriverList"])
+
+	// Only guess from the hardcoded grid once SessionInfo has confirmed the
+	// feed is from fallbackSeason. A recording from an earlier year reuses the
+	// same car numbers for different drivers (#1 is whoever won last season),
+	// so guessing there labels the wrong driver rather than leaving it blank.
+	useFallback := st.Session != nil && st.Session.Year == fallbackSeason
+
 	for num, p := range c.positions {
 		cp := model.CarPos{X: p.x, Y: p.y, OnTrack: p.onTrack}
 		cp.Number, _ = strconv.Atoi(num)
@@ -833,7 +845,7 @@ func (c *Client) Snapshot() model.State {
 			cp.Acronym = getStr(d, "Tla")
 			cp.TeamColour = getStr(d, "TeamColour")
 		}
-		if fb, ok := fallbackDrivers[cp.Number]; ok {
+		if fb, ok := fallbackDrivers[cp.Number]; ok && useFallback {
 			if cp.Acronym == "" {
 				cp.Acronym = fb.Tla
 			}
@@ -869,7 +881,7 @@ func (c *Client) Snapshot() model.State {
 			row.Team = getStr(d, "TeamName")
 			row.TeamColour = getStr(d, "TeamColour")
 		}
-		if fb, ok := fallbackDrivers[row.Number]; ok {
+		if fb, ok := fallbackDrivers[row.Number]; ok && useFallback {
 			if row.Acronym == "" {
 				row.Acronym = fb.Tla
 			}
