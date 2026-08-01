@@ -846,6 +846,11 @@ func (r *Renderer) renderTiming(img *image.RGBA, st model.State, y int, showTcam
 		}
 	}
 	r.textRight(img, r.small, hdr, colLast, y, "LAST")
+	// Session overall-best lap under the LAST label, matching the per-sector
+	// bests to its left. The FL marker on the row says who is holding it.
+	if st.BestLap != "" {
+		r.textRight(img, r.monoTiny, purple, colLast, y+34, st.BestLap)
+	}
 	if race {
 		r.textRight(img, r.small, hdr, colPit, y, "PIT")
 	} else {
@@ -968,6 +973,13 @@ func (r *Renderer) renderTiming(img *image.RGBA, st model.State, y int, showTcam
 			last = "-:--.-"
 		}
 		r.textRight(img, r.monoSmall, lapCol, colLast, base, last)
+		// Fastest lap of the session: a purple dot in the gap between the lap
+		// time and the pit count. It stays with the driver as they run slower
+		// laps, unlike the purple LAST time, which only marks a lap that was
+		// fastest at the moment it was set.
+		if st.BestLapBy != 0 && s.Number == st.BestLapBy {
+			fillCircle(img, colLast+30, ry+rowH/2, 10, purple)
+		}
 		if race {
 			r.textRight(img, r.small, gray, colPit, base, fmt.Sprint(s.Pits))
 		} else {
@@ -2097,8 +2109,8 @@ func (r *Renderer) RenderSettings(v SettingsView) *image.RGBA {
 	if v.ShowBestSectors {
 		bestSel = 0
 	}
-	r.drawSettingsSection(img, 2, "OVERALL BEST SECTORS", []string{"ON", "OFF"}, bestSel,
-		"Show the fastest S1/S2/S3 of the session above the sector columns.")
+	r.drawSettingsSection(img, 2, "OVERALL BEST TIMES", []string{"ON", "OFF"}, bestSel,
+		"Show the session's fastest S1/S2/S3 and lap above those columns. The purple dot on the driver holding the fastest lap always shows.")
 
 	// Section 3 — live delay (TV sync). A stepper rather than fixed choices:
 	// -/+ buttons either side of the current value, which is highlighted to

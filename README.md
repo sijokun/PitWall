@@ -98,6 +98,12 @@ finer dithers away on the Kaleido panel.
   two big lines (with its flag chip, wrapping if long) and the session name
   moves to the small strip at the very top, so incidents are readable at a
   glance from any tab.
+- **Fastest lap**: the session's best lap is shown in purple under the `LAST`
+  column, and the driver currently holding it carries a **purple dot** between
+  their lap time and the pit count. The dot follows whoever owns the fastest
+  lap; a purple `LAST` time is a different thing — it marks a lap that was
+  fastest at the moment it was set. The header time hides with **Overall best
+  times**; the dot always shows.
 - **Live delay (TV sync)** (Settings) holds the live feed back so timing
   matches a broadcast that runs behind the feed. It's a stepper rather than a
   fixed list — tap `-`/`+` to move the value by 1, 5 or 10 seconds, so any

@@ -398,6 +398,7 @@ func (a *acc) snapshot(session *Session, now time.Time) model.State {
 		}
 		return x.Number < y.Number
 	})
+	st.BestLap, st.BestLapBy = model.SessionBestLap(st.Standings)
 	return st
 }
 

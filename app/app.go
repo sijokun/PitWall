@@ -598,7 +598,10 @@ func (a *App) render(ctx context.Context) {
 		}
 		st := a.state
 		if !a.set.ShowBestSectors {
+			// The header times go with the setting; the FL marker stays, since
+			// it says who holds the fastest lap rather than adding a time row.
 			st.BestSectors = [3]string{}
+			st.BestLap = ""
 		}
 		a.maybeFetchTrackMap(ctx, st)
 		frame = a.rend.Render(st, a.tab, a.trackMap, a.popup, ui.ViewOptions{

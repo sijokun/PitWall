@@ -1004,6 +1004,7 @@ func (c *Client) Snapshot() model.State {
 		}
 		return a.Number < b.Number
 	})
+	st.BestLap, st.BestLapBy = model.SessionBestLap(st.Standings)
 	return st
 }
 

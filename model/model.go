@@ -123,6 +123,8 @@ type State struct {
 	TotalLaps      int
 	TrackStatus    string              // "AllClear", "Yellow", "SCDeployed", "Red", "VSCDeployed", ...
 	BestSectors    [3]string           // session overall-best S1/S2/S3 times ("" = none yet)
+	BestLap        string              // session overall-best lap time ("" = none yet)
+	BestLapBy      int                 // car number holding BestLap (0 = none yet)
 	SectorSegments [3]int              // mini-segments per timing sector; relative S1/S2/S3 lengths for the map
 	RaceControl    []RaceControl       // newest first
 	LapHistory     map[int][]LapRecord // per driver number, oldest first
@@ -179,6 +181,49 @@ func YellowSectorsFrom(msgs []RaceControl) map[int]bool {
 		}
 	}
 	return out
+}
+
+// ParseLapSeconds reads a lap time back into seconds, accepting both the
+// "M:SS.mmm" the feeds use for laps and the bare "SS.mmm" they use for
+// sectors. It returns 0 for anything it cannot read, which callers treat the
+// same as "no time set".
+func ParseLapSeconds(s string) float64 {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return 0
+	}
+	mins := 0.0
+	if i := strings.IndexByte(s, ':'); i >= 0 {
+		m, err := strconv.Atoi(s[:i])
+		if err != nil {
+			return 0
+		}
+		mins, s = float64(m), s[i+1:]
+	}
+	sec, err := strconv.ParseFloat(s, 64)
+	if err != nil {
+		return 0
+	}
+	return mins*60 + sec
+}
+
+// SessionBestLap returns the fastest lap of the session and the car number
+// that set it, derived from each driver's personal best. Ties go to the
+// driver who appears first, matching the feed's own ordering. An empty time
+// and 0 mean nobody has set a lap yet.
+func SessionBestLap(rows []Standing) (string, int) {
+	best, num := "", 0
+	bestSec := 0.0
+	for _, r := range rows {
+		sec := ParseLapSeconds(r.BestLap)
+		if sec <= 0 {
+			continue
+		}
+		if bestSec == 0 || sec < bestSec {
+			best, num, bestSec = r.BestLap, r.Number, sec
+		}
+	}
+	return best, num
 }
 
 // FormatLapSeconds renders seconds as "M:SS.mmm".
