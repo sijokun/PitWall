@@ -1,7 +1,5 @@
 # Pit Wall
 
-**Unofficial live Formula 1 timing for the reMarkable Paper Pro.**
-
 Live Formula 1 timing on your reMarkable Paper Pro's color e-ink display.
 Runs as an [AppLoad](https://github.com/asivery/rmpp-appload) app (qtfb
 windowed mode), so the stock reMarkable UI stays intact.
@@ -26,21 +24,17 @@ status flags, and race control messages.
   SignalR stream used by the official app and projects like
   [FastF1](https://theoehrly-fast-f1.mintlify.app/api/livetiming),
   [undercut-f1](https://github.com/JustAman62/undercut-f1) and
-  [termf1](https://github.com/dk-a-dev/termf1). Free, and **no account or
-  token required** — the app connects to the public `/signalrcore` endpoint.
+  [termf1](https://github.com/dk-a-dev/termf1). Free, and no account or token
+  required — the app connects to the public `/signalrcore` endpoint.
 - **OpenF1** (`api.openf1.org`) — free historical/delayed data, used by
   replay mode to browse past seasons, weekends and sessions and play one
   back on-device.
 
-> The older `/signalr` (ASP.NET SignalR 1.5) endpoint was locked behind an
-> F1-account token in 2025 and now returns HTTP 401. The app uses the modern
-> `/signalrcore` (ASP.NET Core SignalR) endpoint instead, which is open.
-
 ## Prerequisites (one-time, on the device)
 
-1. Enable **developer mode** on the Paper Pro (Settings → General → Software →
+1. Enable developer mode on the Paper Pro (Settings → General → Software →
    Advanced). This factory-resets the device and enables SSH.
-2. Install **XOVI + AppLoad** — easiest via
+2. Install XOVI + AppLoad — easiest via
    [remagic](https://github.com/maximerivest/remagic), or manually per the
    AppLoad README.
 
@@ -60,11 +54,10 @@ copies it plus `external.manifest.json` and `icon.png` to
 `/home/root/xovi/exthome/appload/pitwall/`. The binary is copied aside
 and moved into place, so a deploy works while the app is running (it picks
 up the new build on the next launch). Then open AppLoad on the device and
-launch **Pit Wall**.
+launch Pit Wall.
 
-No configuration is required — no account, token or API key. `.env.example`
-documents the one optional variable (`F1_DNS`, below); copy it to `.env` only
-if your network needs a specific resolver.
+No configuration is required — no account, token or API key. The one optional
+variable, `F1_DNS`, is documented in `.env.example` and below.
 
 The launcher icon is generated, not a checked-in asset:
 
@@ -85,8 +78,8 @@ finer dithers away on the Kaleido panel.
     is on air, an animated waiting screen shows that the app is still
     polling; timing appears by itself the moment the feed carries a
     session. RETRY reconnects.
-  - **Replay** opens the OpenF1 browser: pick a **season**, then a **race
-    weekend**, then a **session** (BACK steps up a level). Loading a
+  - **Replay** opens the OpenF1 browser: pick a season, then a race
+    weekend, then a session (BACK steps up a level). Loading a
     session takes ~20 s due to API rate limits. The Grand Prix name and the
     lap counter (`LAP 32/69`, the distance taken from the session's lap
     data) are shown on top while playing. Tap the clock in the top strip to
@@ -102,21 +95,18 @@ finer dithers away on the Kaleido panel.
   two big lines (with its flag chip, wrapping if long) and the session name
   moves to the small strip at the very top, so incidents are readable at a
   glance from any tab.
-- **Fastest lap**: the session's best lap is shown in purple under the `LAST`
-  column, and the driver currently holding it carries a **purple dot** between
-  their lap time and the pit count. The dot follows whoever owns the fastest
-  lap; a purple `LAST` time is a different thing — it marks a lap that was
-  fastest at the moment it was set. The header time hides with **Overall best
-  times**; the dot always shows.
+- **Fastest lap**: the session's best lap shows in purple under the `LAST`
+  column, and a purple dot sits beside the lap time of the driver holding it.
+  A purple `LAST` time means something narrower — that lap was fastest when it
+  was set. The header time follows the Overall best times setting; the dot
+  always shows.
 - **Live delay (TV sync)** (Settings) holds the live feed back so timing
   matches a broadcast that runs behind the feed. It's a stepper rather than a
-  fixed list — tap `-`/`+` to move the value by 1, 5 or 10 seconds, so any
-  delay up to 10 minutes is reachable; `OFF` (0) is realtime. Events are held
-  in memory until due, so raising it costs a little memory and takes effect
-  immediately. Live sessions only; replays are unaffected.
-- **Tabs** (bottom bar): **TIMING** — the leaderboard; **MAP** — the circuit
+  fixed list — tap `-`/`+` to move the value by 1, 5 or 10 seconds, up to 10
+  minutes; `OFF` (0) is realtime. Live sessions only.
+- **Tabs** (bottom bar): TIMING — the leaderboard; MAP — the circuit
   outline (from the MultiViewer API) with live car positions from the
-  `Position.z` feed; **RACE CONTROL** — the full message log with flags.
+  `Position.z` feed; RACE CONTROL — the full message log with flags.
 - **Yellow flags**: race control's per-sector messages ("YELLOW / DOUBLE
   YELLOW IN TRACK SECTOR 7", cleared by "CLEAR IN TRACK SECTOR 7") are
   folded into the set of marshal sectors currently flagged. The YELLOW chip
@@ -138,8 +128,8 @@ finer dithers away on the Kaleido panel.
 - **DNS**: the device's `/etc/resolv.conf` is often empty or points at a
   resolver that never answers, so `api.openf1.org` and
   `livetiming.formula1.com` fail to resolve on an otherwise working network.
-  The app therefore resolves through **8.8.8.8**, falling back to
-  **1.1.1.1** and then to any system nameservers. Override with
+  The app therefore resolves through 8.8.8.8, falling back to 1.1.1.1 and
+  then to any system nameservers. Override with
   `F1_DNS=9.9.9.9,149.112.112.112`, or `F1_DNS=system` to use the OS
   resolver as-is.
 - Quit from the AppLoad launcher.
@@ -168,8 +158,7 @@ go run ./cmd/preview -o preview.png              # auto: live, else OpenF1
 go run ./cmd/preview -source live                # force live timing
 go run ./cmd/preview -source openf1 -session 9165
 
-# a chosen point in a past session, rather than its finished state — the
-# README screenshots are this session, 60 minutes in
+# a chosen point in a session rather than its finished state
 go run ./cmd/preview -source openf1 -session 11342 -into 60m
 
 # render from a recorded session (2025 Japanese GP, from f1stuff/f1-live-data)
