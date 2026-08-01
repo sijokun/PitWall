@@ -38,7 +38,19 @@ status flags, and race control messages.
    [remagic](https://github.com/maximerivest/remagic), or manually per the
    AppLoad README.
 
-## Build & install (on your computer)
+## Install
+
+### From the Store (recommended)
+
+Once listed in the [remagic](https://github.com/maximerivest/remagic) catalog,
+no toolchain or clone is needed — tap **F1 Telemetry** in the Store app on the
+tablet, or from your computer:
+
+```sh
+remagic install f1telemetry
+```
+
+### From source
 
 Requires Go 1.22+. With the tablet connected over USB (or on the same Wi-Fi):
 

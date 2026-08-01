@@ -1,5 +1,8 @@
 {
+    "id": "f1telemetry",
     "name": "F1 Telemetry",
+    "version": "1.0.0",
+    "description": "Live Formula 1 timing on your Paper Pro's color e-ink display: positions, intervals, lap times, tyres, track status flags, a circuit map with live car positions, and race control messages. Replays past sessions too.",
     "application": "f1telemetry",
     "qtfb": true,
     "aspectRatio": "original",
