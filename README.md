@@ -59,16 +59,9 @@ launch Pit Wall.
 No configuration is required — no account, token or API key. The one optional
 variable, `F1_DNS`, is documented in `.env.example` and below.
 
-The launcher icon is generated, not a checked-in asset:
-
-```sh
-go run ./cmd/icon                # all candidates in build/, icon.png = chequered
-go run ./cmd/icon -style track   # or: track | bars
-```
-
-AppLoad draws `icon.png` at 150x150 next to the manifest, so the candidates
-are flat two-tone 256x256 PNGs with no hairlines or gradients — anything
-finer dithers away on the Kaleido panel.
+`icon.png` is the launcher tile, drawn by AppLoad at 150x150 next to the
+manifest. Replace it with another flat two-tone 256x256 PNG if you like —
+hairlines and gradients dither away on the Kaleido panel.
 
 ## Usage
 

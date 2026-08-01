@@ -18,7 +18,7 @@ ssh "root@$DEVICE" "mkdir -p $APPDIR"
 scp build/pitwall "root@$DEVICE:$APPDIR/.pitwall.new"
 ssh "root@$DEVICE" "mv -f $APPDIR/.pitwall.new $APPDIR/pitwall && chmod +x $APPDIR/pitwall"
 scp external.manifest.json "root@$DEVICE:$APPDIR/external.manifest.json"
-# Launcher icon (generate/choose with: go run ./cmd/icon -style track).
+# Launcher icon.
 if [ -f icon.png ]; then
     scp icon.png "root@$DEVICE:$APPDIR/icon.png"
 fi
