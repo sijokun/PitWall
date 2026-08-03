@@ -108,7 +108,7 @@ func main() {
 		ui.SetScreen(w, h)
 	}
 
-	fb, err := qtfb.Connect(qtfb.KeyFromEnv(), qtfb.FmtRMPPRGB565)
+	fb, err := qtfb.Connect(qtfb.KeyFromEnv(), qtfb.FormatFor(ui.Width, ui.Height))
 	if err != nil {
 		log.Fatalf("qtfb: %v", err)
 	}
