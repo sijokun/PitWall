@@ -1,8 +1,7 @@
 //go:build linux
 
 // Package qtfb is a pure-Go client for the AppLoad/qtfb shared-memory
-// framebuffer protocol used to run windowed apps inside xochitl on the
-// reMarkable Paper Pro.
+// framebuffer protocol used to run windowed apps inside xochitl.
 //
 // Protocol reference: rmpp-appload/backends/qtfb-clients/cpp/common.h
 package qtfb
@@ -12,6 +11,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"unsafe"
 
 	"golang.org/x/sys/unix"
 )
@@ -23,6 +23,12 @@ const (
 	RMPPWidth  = 1620
 	RMPPHeight = 2160
 
+	RMPPMWidth  = 954
+	RMPPMHeight = 1696
+
+	RM2Width  = 1404
+	RM2Height = 1872
+
 	msgInitialize     = 0
 	msgUpdate         = 1
 	msgTerminate      = 3
@@ -30,9 +36,16 @@ const (
 	msgSetRefreshMode = 5
 	msgFullRefresh    = 6
 
-	FmtRMPPRGB888   = 1
-	FmtRMPPRGBA8888 = 2
-	FmtRMPPRGB565   = 3
+	// The format also picks the buffer geometry: the server maps each of
+	// these to a fixed resolution in createDefaultSHM, so a client asks for
+	// the panel it wants by asking for that panel's format.
+	FmtRM2FB         = 0
+	FmtRMPPRGB888    = 1
+	FmtRMPPRGBA8888  = 2
+	FmtRMPPRGB565    = 3
+	FmtRMPPMRGB888   = 4
+	FmtRMPPMRGBA8888 = 5
+	FmtRMPPMRGB565   = 6
 
 	updateAll     = 0
 	updatePartial = 1
@@ -51,10 +64,19 @@ const (
 	InputPenUpdate    = 0x22
 )
 
-// sizeof(struct ClientMessage) / sizeof(struct ServerMessage) on aarch64.
+// sizeof(struct ClientMessage) / sizeof(struct ServerMessage) for the target.
+// ClientMessage is a tag plus a union of int-only members, so it is 24 bytes
+// everywhere. ServerMessage holds a size_t, which aligns its union to a word
+// and makes the struct 32 bytes on a 64-bit target and 24 on a 32-bit one.
 const (
+	wordSize = int(unsafe.Sizeof(uintptr(0)))
+
 	clientMsgSize = 24
-	serverMsgSize = 32
+
+	// 20 is sizeof(UserInputContents), the union's largest member.
+	unionOff      = wordSize
+	unionSize     = (20 + wordSize - 1) / wordSize * wordSize
+	serverMsgSize = unionOff + unionSize
 )
 
 var le = binary.LittleEndian
@@ -90,6 +112,20 @@ func KeyFromEnv() uint32 {
 	return DefaultFramebuffer
 }
 
+// FormatFor returns the RGB565 format constant whose buffer is w x h. The
+// server sizes the shared buffer from the format alone, so asking for the
+// wrong one yields a buffer of the wrong width and shears every row.
+func FormatFor(w, h int) uint8 {
+	switch {
+	case w == RM2Width && h == RM2Height:
+		return FmtRM2FB
+	case w == RMPPMWidth && h == RMPPMHeight:
+		return FmtRMPPMRGB565
+	default:
+		return FmtRMPPRGB565
+	}
+}
+
 func Connect(key uint32, format uint8) (*Client, error) {
 	fd, err := unix.Socket(unix.AF_UNIX, unix.SOCK_SEQPACKET, 0)
 	if err != nil {
@@ -116,8 +152,13 @@ func Connect(key uint32, format uint8) (*Client, error) {
 		unix.Close(fd)
 		return nil, fmt.Errorf("recv init response (n=%d): %w", n, err)
 	}
-	shmKey := int32(le.Uint32(buf[8:]))
-	shmSize := le.Uint64(buf[16:])
+	shmKey := int32(le.Uint32(buf[unionOff:]))
+	var shmSize uint64
+	if wordSize == 8 {
+		shmSize = le.Uint64(buf[unionOff+wordSize:])
+	} else {
+		shmSize = uint64(le.Uint32(buf[unionOff+wordSize:]))
+	}
 
 	shmPath := fmt.Sprintf("/dev/shm/qtfb_%d", shmKey)
 	shmFD, err := unix.Open(shmPath, unix.O_RDWR, 0)
@@ -156,11 +197,11 @@ func (c *Client) readLoop() {
 			return
 		case msgUserInput:
 			ev := InputEvent{
-				Type:  int32(le.Uint32(buf[8:])),
-				DevID: int32(le.Uint32(buf[12:])),
-				X:     int32(le.Uint32(buf[16:])),
-				Y:     int32(le.Uint32(buf[20:])),
-				D:     int32(le.Uint32(buf[24:])),
+				Type:  int32(le.Uint32(buf[unionOff:])),
+				DevID: int32(le.Uint32(buf[unionOff+4:])),
+				X:     int32(le.Uint32(buf[unionOff+8:])),
+				Y:     int32(le.Uint32(buf[unionOff+12:])),
+				D:     int32(le.Uint32(buf[unionOff+16:])),
 			}
 			select {
 			case c.Input <- ev:
