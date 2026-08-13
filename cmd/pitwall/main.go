@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -90,12 +91,28 @@ func (d *fbDisplay) DeepRefresh() {
 	d.fb.RequestFullRefresh()
 }
 
+// colorPanel reports whether the panel is Gallery 3 = Cumulus
+func colorPanel() bool {
+	paths, _ := filepath.Glob("/proc/device-tree/*panel*/compatible")
+	for _, p := range paths {
+		b, err := os.ReadFile(p)
+		if err == nil && bytes.Contains(bytes.ToLower(b), []byte("cumulus")) {
+			return true
+		}
+	}
+	return false
+}
+
 func main() {
 	source := flag.String("source", "auto", "data source: auto | live | openf1")
 	speed := flag.Float64("speed", 60, "replay speed factor")
 	minRedraw := flag.Duration("min-redraw", time.Second, "minimum interval between e-ink redraws")
 	screen := flag.String("screen", "", "panel size WxH (default: Paper Pro 1620x2160)")
 	flag.Parse()
+
+	if colorPanel() {
+		ui.SetStripe(0xf2)
+	}
 
 	// The layout adapts to the panel, but AppLoad's protocol never reports its
 	// size, so a non-Paper-Pro device has to be told. Do this before anything

@@ -275,6 +275,9 @@ func ClampDelay(sec int) int {
 	return sec
 }
 
+// SetStripe overrides the row-shading gray.
+func SetStripe(v uint8) { stripe = color.RGBA{v, v, v, 0xff} }
+
 // RedrawOptions are the screen-redraw interval choices (seconds).
 var RedrawOptions = []int{1, 3, 5, 10}
 
