@@ -547,12 +547,13 @@ var (
 	gray  = color.RGBA{0x66, 0x66, 0x66, 0xff}
 	light = color.RGBA{0xdd, 0xdd, 0xdd, 0xff}
 	white = color.RGBA{0xff, 0xff, 0xff, 0xff}
-	// Saturated variants: the Kaleido e-ink panel washes out muted tones,
+	// Saturated variants: the Gallery e-ink panel washes out muted tones,
 	// so timing colors need full saturation to stay distinguishable.
 	green  = color.RGBA{0x00, 0xff, 0x00, 0xff}
 	purple = color.RGBA{0xff, 0x00, 0xff, 0xff}
 	yellow = color.RGBA{0xe0, 0x66, 0x00, 0xff} // orange: pure yellow is unreadable on white
-	stripe = color.RGBA{0xf2, 0xf2, 0xf2, 0xff}
+	// 0xdd = lightest gray that doesn't trigger a flash on bw panels
+	stripe = color.RGBA{0xdd, 0xdd, 0xdd, 0xff}
 	// tcamYellow is the onboard-camera yellow, drawn on a dark outline so it
 	// stays visible over any team color.
 	tcamYellow = color.RGBA{0xf5, 0xc8, 0x00, 0xff}

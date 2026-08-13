@@ -61,7 +61,7 @@ variable, `F1_DNS`, is documented in `.env.example` and below.
 
 `icon.png` is the launcher tile, drawn by AppLoad at 150x150 next to the
 manifest. Replace it with another flat two-tone 256x256 PNG if you like —
-hairlines and gradients dither away on the Kaleido panel.
+hairlines and gradients dither away on the Gallery panel.
 
 ## Other devices
 
