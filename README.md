@@ -1,5 +1,7 @@
 # Pit Wall
 
+[![vellum](https://img.shields.io/badge/vellum-pitwall-purple)](https://vellum.delivery/#/package/pitwall/)
+
 Live Formula 1 timing on your reMarkable Paper Pro's color e-ink display.
 Runs as an [AppLoad](https://github.com/asivery/rmpp-appload) app (qtfb
 windowed mode), so the stock reMarkable UI stays intact.
@@ -30,17 +32,24 @@ status flags, and race control messages.
   replay mode to browse past seasons, weekends and sessions and play one
   back on-device.
 
-## Prerequisites (one-time, on the device)
-
-1. Enable developer mode on the Paper Pro (Settings → General → Software →
-   Advanced). This factory-resets the device and enables SSH.
-2. Install XOVI + AppLoad — easiest via
-   [remagic](https://github.com/maximerivest/remagic), or manually per the
-   AppLoad README.
-
 ## Install
 
-Requires Go 1.22+. With the tablet connected over USB (or on the same Wi-Fi):
+Enable developer mode first (Settings → General → Software → Advanced). This
+factory-resets the device and enables SSH.
+
+### Installation via [Vellum package manager](https://github.com/vellum-dev/vellum)
+
+```sh
+vellum add pitwall
+```
+
+A launcher (AppLoad) and XOVI are pulled in as dependencies. Open
+AppLoad in the reMarkable sidebar and launch Pit Wall.
+
+### Manual
+
+Requires XOVI + AppLoad already installed, and Go 1.22+ on the build machine.
+With the tablet connected over USB (or on the same Wi-Fi):
 
 ```sh
 git clone https://github.com/sijokun/PitWall.git
