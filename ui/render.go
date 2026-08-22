@@ -15,6 +15,7 @@ import (
 	"math"
 	"sort"
 	"strings"
+	"time"
 
 	"golang.org/x/image/font"
 	"golang.org/x/image/font/gofont/gobold"
@@ -2031,6 +2032,11 @@ type WaitingView struct {
 	Status  string // what the feed is doing right now
 	Note    string // error / hint line at the bottom
 	Buttons []string
+	// DelayTotal > 0 means a live session is on air but its timing is held
+	// in the TV-sync buffer: the marching bar becomes a fill bar showing
+	// DelayBuffered of DelayTotal, with a countdown under it.
+	DelayBuffered time.Duration
+	DelayTotal    time.Duration
 }
 
 // Waiting-screen geometry. The marching bar is the only thing that moves:
@@ -2067,6 +2073,35 @@ func drawMarchingBar(img *image.RGBA, x0, y, w, tick int) {
 	}
 }
 
+// drawFillBar draws a progress bar in the marching bar's band: the same
+// cells, filled left to right in proportion to done/total.
+func drawFillBar(img *image.RGBA, x0, y, w int, done, total time.Duration) {
+	cellW := w / waitBarCol
+	filled := 0
+	if total > 0 {
+		filled = int(float64(waitBarCol) * float64(done) / float64(total))
+	}
+	if filled > waitBarCol {
+		filled = waitBarCol
+	}
+	for i := 0; i < waitBarCol; i++ {
+		col := color.Color(light)
+		if i < filled {
+			col = black
+		}
+		fillRect(img, x0+i*cellW, y, cellW-6, 22, col)
+	}
+}
+
+// fmtClock renders a duration as M:SS (seconds rounded down).
+func fmtClock(d time.Duration) string {
+	if d < 0 {
+		d = 0
+	}
+	s := int(d / time.Second)
+	return fmt.Sprintf("%d:%02d", s/60, s%60)
+}
+
 // RenderWaiting draws the live-mode waiting screen: a headline, the feed
 // status, and a single marching bar driven by Tick that shows the app is
 // still polling for a session.
@@ -2084,20 +2119,41 @@ func (r *Renderer) RenderWaiting(v WaitingView) *image.RGBA {
 	y += px(46)
 	fillRect(img, margin, y, Width-2*margin, 4, black)
 
-	r.textCenter(img, r.title, black, waitCX, waitTitleY, "WAITING FOR LIVE SESSION")
+	title := "WAITING FOR LIVE SESSION"
+	if v.DelayTotal > 0 {
+		title = "SESSION ON AIR — BUFFERING"
+	}
+	r.textCenter(img, r.title, black, waitCX, waitTitleY, title)
 	status := v.Status
 	if status == "" {
 		status = "Checking the F1 live timing feed"
 	}
 	r.textCenter(img, r.row, gray, waitCX, waitTitleY+70, status)
 
-	drawMarchingBar(img, waitCX-waitBarW/2, waitBarY, waitBarW, v.Tick)
+	if v.DelayTotal > 0 {
+		// Session found — the delay buffer is filling. A fill bar instead
+		// of the marching bar, and a countdown instead of the wait clock.
+		drawFillBar(img, waitCX-waitBarW/2, waitBarY, waitBarW, v.DelayBuffered, v.DelayTotal)
+		left := v.DelayTotal - v.DelayBuffered
+		if left < 0 {
+			left = 0
+		}
+		r.textCenter(img, r.monoSmall, gray, waitCX, waitBarY+100,
+			fmt.Sprintf("buffering %s / %s — timing in %s",
+				fmtClock(v.DelayBuffered), fmtClock(v.DelayTotal), fmtClock(left)))
+		r.textCenter(img, r.small, gray, waitCX, waitBarY+220,
+			"The live delay (TV sync) holds the feed back by the set amount.")
+		r.textCenter(img, r.small, gray, waitCX, waitBarY+270,
+			"Lower it in Settings to see timing sooner.")
+	} else {
+		drawMarchingBar(img, waitCX-waitBarW/2, waitBarY, waitBarW, v.Tick)
 
-	r.textCenter(img, r.monoSmall, gray, waitCX, waitBarY+100, "waiting "+v.Elapsed)
-	r.textCenter(img, r.small, gray, waitCX, waitBarY+220,
-		"Timing appears automatically the moment a session goes live.")
-	r.textCenter(img, r.small, gray, waitCX, waitBarY+270,
-		"To watch a past session, switch SESSION MODE to Replay in Settings.")
+		r.textCenter(img, r.monoSmall, gray, waitCX, waitBarY+100, "waiting "+v.Elapsed)
+		r.textCenter(img, r.small, gray, waitCX, waitBarY+220,
+			"Timing appears automatically the moment a session goes live.")
+		r.textCenter(img, r.small, gray, waitCX, waitBarY+270,
+			"To watch a past session, switch SESSION MODE to Replay in Settings.")
+	}
 	if v.Note != "" {
 		r.text(img, r.small, gray, margin, Height-margin, v.Note)
 	}

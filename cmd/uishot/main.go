@@ -91,6 +91,14 @@ func main() {
 		Status:  "Connected — no session on air yet",
 		Buttons: []string{"RETRY", "SETTINGS", "EXIT"},
 	}))
+	save("build/shot_waiting_delay.png", r.RenderWaiting(ui.WaitingView{
+		Tick:          3,
+		Elapsed:       "under a minute",
+		Status:        "Holding the feed back to match your TV delay",
+		Buttons:       []string{"RETRY", "SETTINGS", "EXIT"},
+		DelayBuffered: 17 * time.Second,
+		DelayTotal:    45 * time.Second,
+	}))
 	save("build/shot_settings.png", r.RenderSettings(ui.SettingsView{
 		ShowBestSectors: true, DelaySeconds: 47, ReplaySpeed: 60, LiveDelayShown: true,
 		CanExit: true, CanBack: true,

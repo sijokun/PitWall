@@ -160,6 +160,25 @@ func (c *Client) SetDelay(d time.Duration) {
 	c.mu.Unlock()
 }
 
+// DelayProgress reports how far the live-delay buffer has filled with
+// session timing: the age of the oldest pending TimingData event and the
+// configured delay. ok is false when no delay is set, nothing timing-bearing
+// is waiting, or the visible state already carries timing (the buffer is
+// then past its fill and the screen shows data, not a countdown).
+func (c *Client) DelayProgress() (buffered, delay time.Duration, ok bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.delay <= 0 || len(getMap(c.state["TimingData"], "Lines")) > 0 {
+		return 0, 0, false
+	}
+	for _, ev := range c.pending {
+		if ev.topic == "TimingData" && len(getMap(ev.patch, "Lines")) > 0 {
+			return time.Since(ev.at), c.delay, true
+		}
+	}
+	return 0, 0, false
+}
+
 // pump applies queued websocket messages. It batches everything currently
 // buffered into a single locked merge followed by one notify, so a burst of
 // messages collapses into one state update instead of one merge+render per

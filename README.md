@@ -123,7 +123,12 @@ size without a tablet.
 - **Live delay (TV sync)** (Settings) holds the live feed back so timing
   matches a broadcast that runs behind the feed. It's a stepper rather than a
   fixed list — tap `-`/`+` to move the value by 1, 5 or 10 seconds, up to 10
-  minutes; `OFF` (0) is realtime. Live sessions only.
+  minutes; `OFF` (0) is realtime. Live sessions only. For F1 TV a delay of
+  about 35–45 seconds is typical; compare the lap counter or a pit stop with
+  the broadcast and nudge from there. While the buffer first fills at the
+  start of a session (or after raising the delay) the waiting screen shows a
+  fill bar and countdown instead of "no session on air" — timing appears
+  once the set delay has elapsed.
 - **Tabs** (bottom bar): TIMING — the leaderboard; MAP — the circuit
   outline (from the MultiViewer API) with live car positions from the
   `Position.z` feed; RACE CONTROL — the full message log with flags.

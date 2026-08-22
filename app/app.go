@@ -559,13 +559,23 @@ func (a *App) render(ctx context.Context) {
 				status = "Connected — no session on air yet"
 			}
 		}
-		frame = a.rend.RenderWaiting(ui.WaitingView{
+		wv := ui.WaitingView{
 			Tick:    a.anim,
 			Elapsed: formatElapsed(time.Since(a.waitSince)),
 			Status:  status,
 			Note:    note,
 			Buttons: a.headerButtons(modeWaiting),
-		}).Pix
+		}
+		// With a live delay set, the session's first timing sits in the
+		// buffer for the delay's length before it reaches the screen; show
+		// that it is on its way rather than "no session on air".
+		if a.live != nil {
+			if buffered, total, ok := a.live.DelayProgress(); ok {
+				wv.Status = "Holding the feed back to match your TV delay"
+				wv.DelayBuffered, wv.DelayTotal = buffered, total
+			}
+		}
+		frame = a.rend.RenderWaiting(wv).Pix
 	case modeSeasons, modeMeetings, modeSessions:
 		frame = a.rend.RenderBrowse(a.browseView()).Pix
 	case modeLoading:
