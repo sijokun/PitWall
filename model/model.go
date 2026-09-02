@@ -24,6 +24,11 @@ type Sector struct {
 	PersonalBest bool
 	OverallBest  bool
 	Stale        bool // carried over from the previous lap
+	// Segments are the sector's mini-segment statuses on the current lap, in
+	// track order (raw feed codes: 0 = not run yet, 2048 = completed,
+	// 2049 = personal best, 2051 = overall best, 2064 = pit lane). Empty when
+	// the source carries no segment data (OpenF1).
+	Segments []int
 }
 
 type Standing struct {
@@ -129,8 +134,9 @@ type State struct {
 	RaceControl    []RaceControl       // newest first
 	LapHistory     map[int][]LapRecord // per driver number, oldest first
 	CarPositions   []CarPos
-	YellowSectors  map[int]bool // marshal sectors currently under (double) yellow
-	CircuitKey     int          // MultiViewer circuit key from SessionInfo, 0 = unknown
+	YellowSectors  map[int]bool  // marshal sectors currently under (double) yellow
+	CircuitKey     int           // MultiViewer circuit key from SessionInfo, 0 = unknown
+	TrackOffset    time.Duration // circuit's GMT offset from the feed (0 = unknown/UTC)
 	LastUpdate     time.Time
 	Source         string // "F1 Live Timing" or "OpenF1"
 	MeetingName    string // Grand Prix name, shown as the title during replays
@@ -181,6 +187,25 @@ func YellowSectorsFrom(msgs []RaceControl) map[int]bool {
 		}
 	}
 	return out
+}
+
+// ParseGmtOffset reads a feed GMT offset like "02:00:00" or "-05:30:00"
+// into a duration. Anything unreadable returns 0 (UTC).
+func ParseGmtOffset(s string) time.Duration {
+	s = strings.TrimSpace(s)
+	neg := strings.HasPrefix(s, "-")
+	s = strings.TrimPrefix(strings.TrimPrefix(s, "-"), "+")
+	var h, m, sec int
+	if _, err := fmt.Sscanf(s, "%d:%d:%d", &h, &m, &sec); err != nil {
+		if _, err := fmt.Sscanf(s, "%d:%d", &h, &m); err != nil {
+			return 0
+		}
+	}
+	d := time.Duration(h)*time.Hour + time.Duration(m)*time.Minute + time.Duration(sec)*time.Second
+	if neg {
+		return -d
+	}
+	return d
 }
 
 // ParseLapSeconds reads a lap time back into seconds, accepting both the

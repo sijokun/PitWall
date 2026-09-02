@@ -32,6 +32,7 @@ type Session struct {
 	Location         string  `json:"location"`
 	CountryName      string  `json:"country_name"`
 	Year             int     `json:"year"`
+	GmtOffset        string  `json:"gmt_offset"`
 	DateStart        apiTime `json:"date_start"`
 	DateEnd          apiTime `json:"date_end"`
 }
@@ -75,7 +76,14 @@ type lapRec struct {
 	Sector1      *float64 `json:"duration_sector_1"`
 	Sector2      *float64 `json:"duration_sector_2"`
 	Sector3      *float64 `json:"duration_sector_3"`
+	Seg1         []int    `json:"segments_sector_1"`
+	Seg2         []int    `json:"segments_sector_2"`
+	Seg3         []int    `json:"segments_sector_3"`
 }
+
+// segments returns the lap's mini-segment statuses per sector (same codes as
+// the live feed: 2048 completed, 2049 PB, 2051 overall best, 2064 pit lane).
+func (l lapRec) segments() [3][]int { return [3][]int{l.Seg1, l.Seg2, l.Seg3} }
 
 type stintRec struct {
 	DriverNumber   int    `json:"driver_number"`
@@ -122,20 +130,22 @@ func (t *apiTime) UnmarshalJSON(b []byte) error {
 // ---- accumulator: merged per-session state, shared by poller and replayer ----
 
 type acc struct {
-	drivers  map[int]driverRec
-	pos      map[int]positionRec
-	gaps     map[int]intervalRec
-	lastLap  map[int]lapRec
-	bestLap  map[int]float64
-	stints   map[int][]stintRec // all stints, selected by lap in snapshot
-	pitCount map[int]int
-	rc       []rcRec
-	bestSec  [3]map[int]float64  // per-driver best sector times
-	minSec   [3]float64          // session-best sector times
-	minLap   float64             // session-best lap
-	curSec   map[int][3]*float64 // in-progress lap sectors (replay staging)
-	curLap   map[int]int         // lap number the staged sectors belong to
-	history  map[int][]model.LapRecord
+	drivers   map[int]driverRec
+	pos       map[int]positionRec
+	gaps      map[int]intervalRec
+	lastLap   map[int]lapRec
+	bestLap   map[int]float64
+	stints    map[int][]stintRec // all stints, selected by lap in snapshot
+	pitCount  map[int]int
+	rc        []rcRec
+	bestSec   [3]map[int]float64  // per-driver best sector times
+	minSec    [3]float64          // session-best sector times
+	minLap    float64             // session-best lap
+	curSec    map[int][3]*float64 // in-progress lap sectors (replay staging)
+	curSeg    map[int][3][]int    // in-progress lap mini-segments (replay staging)
+	segCounts [3]int              // mini-segments per sector (max seen)
+	curLap    map[int]int         // lap number the staged sectors belong to
+	history   map[int][]model.LapRecord
 }
 
 func newAcc() acc {
@@ -152,6 +162,7 @@ func newAcc() acc {
 		a.bestSec[i] = map[int]float64{}
 	}
 	a.curSec = map[int][3]*float64{}
+	a.curSeg = map[int][3][]int{}
 	a.curLap = map[int]int{}
 	a.history = map[int][]model.LapRecord{}
 	return a
@@ -172,6 +183,11 @@ func (a *acc) applyInterval(g intervalRec) {
 func (a *acc) applyLap(l lapRec) {
 	if l.LapNumber >= a.lastLap[l.DriverNumber].LapNumber {
 		a.lastLap[l.DriverNumber] = l
+	}
+	for i, segs := range l.segments() {
+		if len(segs) > a.segCounts[i] {
+			a.segCounts[i] = len(segs)
+		}
 	}
 	if l.LapDuration != nil && (*l.LapDuration < a.bestLap[l.DriverNumber] || a.bestLap[l.DriverNumber] == 0) {
 		a.bestLap[l.DriverNumber] = *l.LapDuration
@@ -205,6 +221,7 @@ func (a *acc) applyLap(l lapRec) {
 					Value:        fmt.Sprintf("%.3f", *sec),
 					PersonalBest: *sec == a.bestSec[i][num],
 					OverallBest:  *sec == a.minSec[i],
+					Segments:     l.segments()[i],
 				}
 			}
 		}
@@ -221,19 +238,60 @@ func (a *acc) applyLap(l lapRec) {
 	}
 }
 
-// stageSector reveals one sector of an in-progress lap (replay only) and
-// keeps the best-time tables current.
-func (a *acc) stageSector(num, lapNumber, idx int, v float64) {
+// stageLapStart resets the staged lap at its start (replay only): sector
+// times cleared and every known mini-segment shown as a not-yet-run
+// placeholder, like the live feed's per-lap segment reset.
+func (a *acc) stageLapStart(num, lapNumber int, counts [3]int) {
+	if lapNumber <= a.curLap[num] {
+		return
+	}
+	a.curLap[num] = lapNumber
+	a.curSec[num] = [3]*float64{}
+	var cg [3][]int
+	for i, n := range counts {
+		if n > 0 {
+			cg[i] = make([]int, n)
+		}
+		if n > a.segCounts[i] {
+			a.segCounts[i] = n
+		}
+	}
+	a.curSeg[num] = cg
+}
+
+// stageSegments reveals the mini-segments of an in-progress sector (replay
+// only) — a prefix of the sector's final statuses, the rest zero-padded.
+func (a *acc) stageSegments(num, lapNumber, idx int, segs []int) {
 	if lapNumber < a.curLap[num] {
 		return
 	}
 	if lapNumber > a.curLap[num] {
 		a.curLap[num] = lapNumber
 		a.curSec[num] = [3]*float64{}
+		a.curSeg[num] = [3][]int{}
+	}
+	cg := a.curSeg[num]
+	cg[idx] = segs
+	a.curSeg[num] = cg
+}
+
+// stageSector reveals one sector of an in-progress lap (replay only) and
+// keeps the best-time tables current.
+func (a *acc) stageSector(num, lapNumber, idx int, v float64, segs []int) {
+	if lapNumber < a.curLap[num] {
+		return
+	}
+	if lapNumber > a.curLap[num] {
+		a.curLap[num] = lapNumber
+		a.curSec[num] = [3]*float64{}
+		a.curSeg[num] = [3][]int{}
 	}
 	cs := a.curSec[num]
 	cs[idx] = &v
 	a.curSec[num] = cs
+	cg := a.curSeg[num]
+	cg[idx] = segs
+	a.curSeg[num] = cg
 	if v < a.bestSec[idx][num] || a.bestSec[idx][num] == 0 {
 		a.bestSec[idx][num] = v
 	}
@@ -287,12 +345,13 @@ func (a *acc) snapshot(session *Session, now time.Time) model.State {
 			Year:        session.Year,
 		}
 		st.CircuitKey = session.CircuitKey
+		st.TrackOffset = model.ParseGmtOffset(session.GmtOffset)
 	}
 
 	rc := append([]rcRec(nil), a.rc...)
 	sort.SliceStable(rc, func(i, j int) bool { return rc[i].Date.After(rc[j].Date.Time) })
-	if len(rc) > 30 {
-		rc = rc[:30]
+	if len(rc) > 200 {
+		rc = rc[:200]
 	}
 	for _, r := range rc {
 		st.RaceControl = append(st.RaceControl, model.RaceControl{
@@ -300,6 +359,7 @@ func (a *acc) snapshot(session *Session, now time.Time) model.State {
 		})
 	}
 
+	st.SectorSegments = a.segCounts
 	st.LapHistory = map[int][]model.LapRecord{}
 	for num, h := range a.history {
 		if len(h) > 0 {
@@ -358,6 +418,10 @@ func (a *acc) snapshot(session *Session, now time.Time) model.State {
 							Stale: true,
 						}
 					}
+					// Dots always show the lap in progress, matching the live
+					// feed: partly-run sectors have a zero-padded tail and
+					// unreached ones are all placeholders.
+					row.Sectors[i].Segments = a.curSeg[num][i]
 				}
 			} else {
 				for i, sec := range lapSecs {
@@ -366,12 +430,34 @@ func (a *acc) snapshot(session *Session, now time.Time) model.State {
 							Value:        fmt.Sprintf("%.3f", *sec),
 							PersonalBest: *sec == a.bestSec[i][num],
 							OverallBest:  *sec == a.minSec[i],
+							Segments:     l.segments()[i],
 						}
 					}
 				}
 			}
 			if lapNumber > st.LeaderLap {
 				st.LeaderLap = lapNumber
+			}
+			// Consecutive completed micro-segments from S1 on — the same
+			// counter the live feed carries, so the map can place cars from
+			// sector timing during replays. Mid-lap the staged segments give
+			// live progress; right after a lap completes the full count puts
+			// the car back at the line.
+			segsNow := l.segments()
+			if cg, ok := a.curSeg[num]; ok && a.curLap[num] > l.LapNumber {
+				segsNow = cg
+			}
+			// Segments complete in order, so the car is past the LAST nonzero
+			// one — scanning this way rides over data holes (OpenF1 reports
+			// the first S1 segment as null on most laps).
+			idx := 0
+			for i := 0; i < 3; i++ {
+				for _, status := range segsNow[i] {
+					idx++
+					if status != 0 {
+						row.CompletedSegments = idx
+					}
+				}
 			}
 		}
 		for _, s := range a.stints[num] {
@@ -764,16 +850,29 @@ func (c *Client) LoadReplay(ctx context.Context, sessionKey int) (*Replayer, err
 		l := l
 		// Reveal sectors one by one as they are set (OpenF1 has no
 		// per-sector events, but lap start + sector durations give the
-		// exact moments), then the full lap at completion.
+		// exact moments), then the full lap at completion. Mini-segments
+		// within a sector are revealed on an even split of its duration —
+		// the F1 mini-sector grid is ~equal-time, so that lands close to
+		// when the car actually crossed each one.
+		num, lap := l.DriverNumber, l.LapNumber
+		counts := [3]int{len(l.Seg1), len(l.Seg2), len(l.Seg3)}
+		r.events = append(r.events, event{l.DateStart.Time, func(a *acc) { a.stageLapStart(num, lap, counts) }})
 		cum := l.DateStart.Time
 		for i, sp := range []*float64{l.Sector1, l.Sector2, l.Sector3} {
 			if sp == nil {
 				break
 			}
-			cum = cum.Add(time.Duration(*sp * float64(time.Second)))
-			i, v, lap := i, *sp, l.LapNumber
-			num := l.DriverNumber
-			r.events = append(r.events, event{cum, func(a *acc) { a.stageSector(num, lap, i, v) }})
+			secStart, secDur := cum, time.Duration(*sp*float64(time.Second))
+			cum = cum.Add(secDur)
+			i, v := i, *sp
+			segs := l.segments()[i]
+			for j := 1; j < len(segs); j++ {
+				partial := make([]int, len(segs))
+				copy(partial, segs[:j])
+				t := secStart.Add(secDur * time.Duration(j) / time.Duration(len(segs)))
+				r.events = append(r.events, event{t, func(a *acc) { a.stageSegments(num, lap, i, partial) }})
+			}
+			r.events = append(r.events, event{cum, func(a *acc) { a.stageSector(num, lap, i, v, segs) }})
 		}
 		end := l.DateStart.Time
 		if l.LapDuration != nil {

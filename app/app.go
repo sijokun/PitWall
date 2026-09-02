@@ -107,6 +107,9 @@ type App struct {
 	trackMap   *model.TrackMap
 	trackKey   int
 	popup      int          // driver number of the open lap-history popup
+	popupLap   int          // past lap selected in the popup (0 = current)
+	setPage    int          // settings page shown (ui.SettingsPages pages)
+	rcPage     int          // race control page shown (0 = newest)
 	timePopup  bool         // the replay clock (seek) popup is open
 	hidden     map[int]bool // car numbers hidden from the map
 	loadNote   string
@@ -161,6 +164,9 @@ type Settings struct {
 	HeaderRC        bool    `json:"headerRaceControl"` // header line shows the newest race control message
 	ReplaySpeed     float64 `json:"replaySpeed"`       // virtual-clock factor for OpenF1 replays
 	ShowBestSectors bool    `json:"showBestSectors"`   // overall-best sector row on the timing tab
+	MiniSectors     int     `json:"miniSectors"`       // mini-sectors under the sector times (ui.MiniStyle)
+	MapMiniSectors  bool    `json:"mapMiniSectors"`    // mini-sector boundary ticks on the map
+	TimeMode        int     `json:"timeMode"`          // clock timezone (ui.TimeMode: device/track/UTC)
 	DelaySeconds    int     `json:"delaySeconds"`      // live feed delay for TV sync (0 = realtime)
 	MarkerStyle     int     `json:"markerStyle"`       // map driver marker style (ui.MarkerStyle)
 	Tracking        int     `json:"tracking"`          // map driver tracking source (ui.TrackingMode)
@@ -183,7 +189,7 @@ func settingsPath() string {
 // sectors on, no delay, the given replay speed and session mode) for a
 // missing/invalid file.
 func loadSettings(defSpeed float64, defMode int) Settings {
-	s := Settings{SessionMode: defMode, ReplaySpeed: defSpeed, ShowBestSectors: true, DelaySeconds: 0, ShowTcam: true, RedrawSeconds: 1}
+	s := Settings{SessionMode: defMode, ReplaySpeed: defSpeed, ShowBestSectors: true, MiniSectors: int(ui.MiniLine), MapMiniSectors: true, DelaySeconds: 0, ShowTcam: true, RedrawSeconds: 1}
 	p := settingsPath()
 	if p == "" {
 		return s
@@ -202,6 +208,12 @@ func loadSettings(defSpeed float64, defMode int) Settings {
 	}
 	if s.SessionMode != sessionLive && s.SessionMode != sessionReplay {
 		s.SessionMode = defMode
+	}
+	if s.TimeMode < 0 || s.TimeMode >= len(ui.TimeModeLabels) {
+		s.TimeMode = 0
+	}
+	if s.MiniSectors < 0 || s.MiniSectors >= len(ui.MiniStyleLabels) {
+		s.MiniSectors = int(ui.MiniLine)
 	}
 	return s
 }
@@ -375,6 +387,7 @@ func (a *App) openSettings() {
 		a.prevMode = a.mode
 	}
 	a.mode = modeSettings
+	a.setPage = 0
 	a.mu.Unlock()
 	a.markNow()
 }
@@ -419,6 +432,7 @@ func (a *App) closeReplay() {
 	a.replayer = nil
 	a.mode = modeSessions
 	a.popup = 0
+	a.popupLap = 0
 	a.timePopup = false
 	a.loadNote = ""
 	a.mu.Unlock()
@@ -432,6 +446,7 @@ func (a *App) goTo(m mode) {
 	a.replayGen++
 	a.replayer = nil
 	a.popup = 0
+	a.popupLap = 0
 	a.timePopup = false
 	a.loadNote = ""
 	if m == modeWaiting {
@@ -585,6 +600,10 @@ func (a *App) render(ctx context.Context) {
 			SessionMode:     a.set.SessionMode,
 			HeaderRC:        a.set.HeaderRC,
 			ShowBestSectors: a.set.ShowBestSectors,
+			MiniSectors:     ui.MiniStyle(a.set.MiniSectors),
+			MapMiniSectors:  a.set.MapMiniSectors,
+			TimeMode:        ui.TimeMode(a.set.TimeMode),
+			TrackOffset:     a.state.TrackOffset,
 			DelaySeconds:    a.set.DelaySeconds,
 			ReplaySpeed:     a.set.ReplaySpeed,
 			Marker:          ui.MarkerStyle(a.set.MarkerStyle),
@@ -596,6 +615,7 @@ func (a *App) render(ctx context.Context) {
 			LiveDelayShown:  a.live != nil && a.cfg.FileReplay == "",
 			CanExit:         a.cfg.OnExit != nil,
 			CanBack:         a.prevMode == modeReplay || a.prevMode == modeLoading,
+			Page:            a.setPage,
 		}).Pix
 	default: // modeLive, modeReplay
 		// Snapshot the live feed here (once per frame) rather than on every
@@ -619,9 +639,14 @@ func (a *App) render(ctx context.Context) {
 			Marker:    ui.MarkerStyle(a.set.MarkerStyle),
 			Tracking:  ui.TrackingMode(a.set.Tracking),
 			ShowTcam:  a.set.ShowTcam,
+			Mini:      ui.MiniStyle(a.set.MiniSectors),
+			MapMini:   a.set.MapMiniSectors,
 			Mono:      a.set.MonoMarkers,
 			HeaderRC:  a.set.HeaderRC,
 			TimePopup: a.timePopup,
+			RCPage:    a.rcPage,
+			PopupLap:  a.popupLap,
+			TimeMode:  ui.TimeMode(a.set.TimeMode),
 		}).Pix
 	}
 	fullBW := a.set.FullBW
@@ -793,12 +818,23 @@ func (a *App) Touch(ctx context.Context, x, y int) {
 		}
 		a.mu.Lock()
 		inReplay := a.prevMode == modeReplay || a.prevMode == modeLoading
+		page := a.setPage
+		sessionMode := a.set.SessionMode
 		a.mu.Unlock()
 		if inReplay && ui.HitSettingsBack(x, y, a.cfg.OnExit != nil) {
 			a.closeReplay()
 			return
 		}
-		kind, idx := ui.HitSettingsControl(x, y)
+		if d := ui.HitSettingsPager(x, y, sessionMode); d != 0 {
+			if p := page + d; p >= 0 && p < ui.SettingsPages(sessionMode) {
+				a.mu.Lock()
+				a.setPage = p
+				a.mu.Unlock()
+				a.markNow()
+			}
+			return
+		}
+		kind, idx := ui.HitSettingsControl(x, y, page, sessionMode)
 		switch kind {
 		case ui.SettingSessionMode:
 			if idx >= 0 && idx < len(ui.SessionModeLabels) {
@@ -824,6 +860,28 @@ func (a *App) Touch(ctx context.Context, x, y int) {
 			a.mu.Unlock()
 			a.saveSettings()
 			a.markDirty()
+		case ui.SettingMiniSectors:
+			if idx >= 0 && idx < len(ui.MiniStyleLabels) {
+				a.mu.Lock()
+				a.set.MiniSectors = idx
+				a.mu.Unlock()
+				a.saveSettings()
+				a.markDirty()
+			}
+		case ui.SettingMapMini:
+			a.mu.Lock()
+			a.set.MapMiniSectors = idx == 0 // chip 0 = ON, 1 = OFF
+			a.mu.Unlock()
+			a.saveSettings()
+			a.markDirty()
+		case ui.SettingTimeMode:
+			if idx >= 0 && idx < len(ui.TimeModeLabels) {
+				a.mu.Lock()
+				a.set.TimeMode = idx
+				a.mu.Unlock()
+				a.saveSettings()
+				a.markDirty()
+			}
 		case ui.SettingDelay:
 			// The stepper's middle cell is the value readout, not a button.
 			if idx >= 0 && idx < len(ui.DelaySteps) && ui.DelaySteps[idx] != 0 {
@@ -921,6 +979,7 @@ func (a *App) Touch(ctx context.Context, x, y int) {
 				a.mu.Lock()
 				a.timePopup = true
 				a.popup = 0
+				a.popupLap = 0
 				a.mu.Unlock()
 				a.markDirty()
 				return
@@ -933,9 +992,20 @@ func (a *App) Touch(ctx context.Context, x, y int) {
 		}
 		a.mu.Lock()
 		if a.popup != 0 {
-			a.popup = 0
+			// A tap on a history row opens that lap's map (again = back to
+			// the current lap); anywhere else closes the popup.
+			if lap := ui.HitLapPopupRow(a.state, a.trackMap, a.popup, a.popupLap, x, y); lap > 0 {
+				if a.popupLap == lap {
+					a.popupLap = 0
+				} else {
+					a.popupLap = lap
+				}
+			} else {
+				a.popup = 0
+				a.popupLap = 0
+			}
 			a.mu.Unlock()
-			a.markDirty()
+			a.markNow()
 			return
 		}
 		a.mu.Unlock()
@@ -944,15 +1014,30 @@ func (a *App) Touch(ctx context.Context, x, y int) {
 			if t != a.tab {
 				a.tab = t
 				a.popup = 0
+				a.popupLap = 0
+				a.rcPage = 0
 			}
 			a.mu.Unlock()
 			a.markDirty()
 			return
 		}
 		a.mu.Lock()
+		if a.tab == ui.TabRaceControl {
+			if d := ui.HitRaceControlPager(x, y); d != 0 {
+				if p := a.rcPage + d; p >= 0 && p < a.rend.RaceControlPages(a.state) {
+					a.rcPage = p
+					a.mu.Unlock()
+					a.markNow()
+					return
+				}
+				a.mu.Unlock()
+				return
+			}
+		}
 		if a.tab == ui.TabTiming {
 			if i := ui.HitTimingRow(x, y); i >= 0 && i < len(a.state.Standings) {
 				a.popup = a.state.Standings[i].Number
+				a.popupLap = 0
 				a.mu.Unlock()
 				a.markDirty()
 				return

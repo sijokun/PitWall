@@ -13,6 +13,7 @@ import (
 	"image/color"
 	"image/draw"
 	"math"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -315,6 +316,9 @@ const (
 	SettingMono
 	SettingRedraw
 	SettingFullBW
+	SettingMiniSectors
+	SettingTimeMode
+	SettingMapMini
 )
 
 // SettingsView carries the current settings values into RenderSettings.
@@ -322,6 +326,10 @@ type SettingsView struct {
 	SessionMode     int  // 0 = live, 1 = replay
 	HeaderRC        bool // header line shows the newest race control message
 	ShowBestSectors bool
+	MiniSectors     MiniStyle     // mini-sectors under the sector times
+	MapMiniSectors  bool          // mini-sector boundary ticks on the map
+	TimeMode        TimeMode      // timezone for on-screen clocks
+	TrackOffset     time.Duration // circuit GMT offset, for the CLOCKS caption
 	DelaySeconds    int
 	ReplaySpeed     float64
 	Marker          MarkerStyle
@@ -333,22 +341,26 @@ type SettingsView struct {
 	LiveDelayShown  bool // a live client exists, so the delay actually applies
 	CanExit         bool // show the EXIT button
 	CanBack         bool // a replay is open: show the back-to-sessions arrow
+	Page            int  // settings page shown when the sections span several
 }
 
 // Settings screen geometry: each section is a label + a row of chips + a
-// caption. setSecGap is as tight as the caption/next-label pair allows.
+// caption. Sections that don't fit on one screen at the reference pitch
+// spill onto further pages, flipped with the PREV/NEXT pager at the bottom.
 var (
-	setSecTop  int // first section's label baseline
-	setSecGap  int // vertical distance between section labels
-	setChipTop int // chip row top, below the section label
-	setChipW   int
-	setChipH   int
-	setChipGap int
-	setNoteDy  int // caption baseline below the chip row
+	setSecTop   int // first section's label baseline
+	setSecGap   int // vertical distance between section labels
+	setChipTop  int // chip row top, below the section label
+	setChipW    int
+	setChipH    int
+	setChipGap  int
+	setNoteDy   int // caption baseline below the chip row
+	setFitOne   int // sections that fit when there is no pager row
+	setFitPager int // sections that fit above the pager row
+	setPagerY0  int // pager button row top
+	setPagerY1  int // pager button row bottom
 )
 
-// applySettingsLayout also squeezes the section pitch when the panel is too
-// short for the reference spacing, so every section still fits on one screen.
 func applySettingsLayout() {
 	setSecTop = px(286)
 	setSecGap = px(168)
@@ -357,52 +369,82 @@ func applySettingsLayout() {
 	setChipH = px(66)
 	setChipGap = px(22)
 	setNoteDy = px(34)
+	setPagerY1 = Height - px(24)
+	setPagerY0 = setPagerY1 - px(76)
 
-	// Squeeze the pitch only if the last section would otherwise run off the
-	// bottom; at the reference size everything fits and this is a no-op.
-	if n := len(settingsSections); n > 1 {
-		tail := setChipTop + setChipH + setNoteDy
-		if avail := Height - px(20) - setSecTop - tail; avail > 0 {
-			if fit := avail / (n - 1); fit < setSecGap {
-				setSecGap = fit
-			}
-		}
+	tail := setChipTop + setChipH + setNoteDy
+	setFitOne = 1 + (Height-px(20)-setSecTop-tail)/setSecGap
+	setFitPager = 1 + (setPagerY0-px(20)-setSecTop-tail)/setSecGap
+	if setFitPager < 1 {
+		setFitPager = 1
 	}
 }
 
-// settingsChipW is the chip width of a section — wider for the few sections
-// whose options are words rather than numbers.
-func settingsChipW(section int) int {
-	if section >= 0 && section < len(settingsSections) {
-		switch settingsSections[section] {
-		case SettingSessionMode, SettingHeaderLine:
-			return 280
+// visibleSettings is the section list for a session mode: the live delay
+// only applies to the live feed and the replay speed only to replays, so
+// each mode shows its own and hides the other's.
+func visibleSettings(sessionMode int) []Setting {
+	out := make([]Setting, 0, len(settingsSections))
+	for _, s := range settingsSections {
+		if (s == SettingDelay && sessionMode != 0) || (s == SettingSpeed && sessionMode == 0) {
+			continue
 		}
+		out = append(out, s)
+	}
+	return out
+}
+
+// settingsPerPage balances n visible sections across the fewest pages that
+// fit — all of them on one pager-less screen when possible.
+func settingsPerPage(n int) int {
+	if n <= setFitOne {
+		return n
+	}
+	pages := (n + setFitPager - 1) / setFitPager
+	return (n + pages - 1) / pages
+}
+
+// settingsPages is how many pages the sections span in a session mode.
+func settingsPages(sessionMode int) int {
+	n := len(visibleSettings(sessionMode))
+	per := settingsPerPage(n)
+	return (n + per - 1) / per
+}
+
+// SettingsPages exposes the page count for the app's page stepping.
+func SettingsPages(sessionMode int) int { return settingsPages(sessionMode) }
+
+// settingsChipW is the chip width of a control — wider for the few whose
+// options are words rather than numbers.
+func settingsChipW(kind Setting) int {
+	switch kind {
+	case SettingSessionMode, SettingHeaderLine:
+		return 280
+	case SettingTimeMode:
+		return 220
 	}
 	return setChipW
 }
 
-// settingsChipRect returns the pixel rect of chip i in a section. Render and
-// hit-testing share it so they agree.
-func settingsChipRect(section, i int) (x0, y0, x1, y1 int) {
-	top := setSecTop + section*setSecGap + setChipTop
-	w := settingsChipW(section)
+// settingsChipRect returns the pixel rect of chip i of the control drawn at
+// the given on-screen row. Render and hit-testing share it so they agree.
+func settingsChipRect(kind Setting, row, i int) (x0, y0, x1, y1 int) {
+	top := setSecTop + row*setSecGap + setChipTop
+	w := settingsChipW(kind)
 	x0 = margin + i*(w+setChipGap)
 	return x0, top, x0 + w, top + setChipH
 }
 
-// settingsSections maps each settings section index (top to bottom) to its
-// control kind.
+// settingsSections is every settings control, top to bottom; visibleSettings
+// filters it per session mode.
 var settingsSections = []Setting{
-	SettingSessionMode, SettingHeaderLine, SettingBestSectors, SettingDelay, SettingSpeed,
-	SettingMarker, SettingTracking, SettingTcam, SettingMono, SettingRedraw, SettingFullBW,
+	SettingSessionMode, SettingHeaderLine, SettingBestSectors, SettingMiniSectors, SettingTimeMode,
+	SettingDelay, SettingSpeed, SettingMarker, SettingTracking, SettingMapMini, SettingTcam,
+	SettingMono, SettingRedraw, SettingFullBW,
 }
 
-func settingsChipCount(section int) int {
-	if section < 0 || section >= len(settingsSections) {
-		return 0
-	}
-	switch settingsSections[section] {
+func settingsChipCount(kind Setting) int {
+	switch kind {
 	case SettingSessionMode:
 		return len(SessionModeLabels)
 	case SettingHeaderLine:
@@ -417,21 +459,44 @@ func settingsChipCount(section int) int {
 		return len(TrackingLabels)
 	case SettingRedraw:
 		return len(RedrawOptions)
+	case SettingTimeMode:
+		return len(TimeModeLabels)
+	case SettingMiniSectors:
+		return len(MiniStyleLabels)
 	}
 	return 2 // the toggles: ON/OFF, Color/B&W, Off/On
 }
 
-// HitSettingsControl maps a touch to a settings control and option index.
-func HitSettingsControl(x, y int) (Setting, int) {
-	for s := 0; s < len(settingsSections); s++ {
-		for i := 0; i < settingsChipCount(s); i++ {
-			x0, y0, x1, y1 := settingsChipRect(s, i)
+// HitSettingsControl maps a touch to a settings control and option index,
+// among the sections visible on the given page in the given session mode.
+func HitSettingsControl(x, y, page, sessionMode int) (Setting, int) {
+	vis := visibleSettings(sessionMode)
+	per := settingsPerPage(len(vis))
+	for idx := page * per; idx < len(vis) && idx < (page+1)*per; idx++ {
+		kind := vis[idx]
+		for i := 0; i < settingsChipCount(kind); i++ {
+			x0, y0, x1, y1 := settingsChipRect(kind, idx-page*per, i)
 			if x >= x0 && x <= x1 && y >= y0 && y <= y1 {
-				return settingsSections[s], i
+				return kind, i
 			}
 		}
 	}
 	return SettingNone, -1
+}
+
+// HitSettingsPager maps a touch to the settings pager: -1 = PREV, +1 = NEXT,
+// 0 = neither (always 0 when everything fits on one page).
+func HitSettingsPager(x, y, sessionMode int) int {
+	if settingsPages(sessionMode) <= 1 || y < setPagerY0-20 || y > setPagerY1+20 {
+		return 0
+	}
+	switch {
+	case x >= margin-20 && x <= margin+btnW+20:
+		return -1
+	case x >= Width-margin-btnW-20 && x <= Width-margin+20:
+		return 1
+	}
+	return 0
 }
 
 // Settings gear icon, top-right of the header on live/map/race-control views.
@@ -518,6 +583,74 @@ func HitTab(x, y int) Tab {
 
 type Renderer struct {
 	title, h1, row, small, mono, monoSmall, monoTiny font.Face
+
+	// Clock display for the current frame, set at the top of Render so every
+	// timestamp on screen agrees.
+	clockMode   TimeMode
+	clockOffset time.Duration // track's GMT offset for TimeTrack
+
+	// segAnim interpolates Sector-mode car markers between mini-segment
+	// boundaries, so dots glide along the track instead of teleporting on
+	// each crossing.
+	segAnim map[int]*segAnimState
+}
+
+type segAnimState struct {
+	count  int
+	at     time.Time // state clock when the completed-segment count changed
+	sawLap bool      // has ever had segments this session — a car back at
+	// count 0 crossed start/finish and is gliding into its next lap
+}
+
+// A car crossing no mini-segment for this long is position-uncertain (ringed
+// with a "?"), and after the longer threshold dropped from the map.
+const (
+	microStallWarn = 30 * time.Second
+	microStallHide = 3 * time.Minute
+)
+
+// segProgress estimates how many mini-segments past its last confirmed
+// crossing a car has gone (e.g. 1.4 = mid-way through the second one):
+// elapsed time (on the state's clock, so replay speed is respected) since
+// the completed-segment count last advanced, against the expected time per
+// segment. Prediction runs a few segments deep so the marker keeps moving
+// on every refresh even when the data lags, then holds until a real
+// crossing (or the stall "?" at 30s) resolves it.
+func (r *Renderer) segProgress(num, cseg int, now time.Time, perSeg float64) float64 {
+	a := r.segAnim[num]
+	if a == nil {
+		a = &segAnimState{count: cseg, at: now}
+		r.segAnim[num] = a
+	}
+	if cseg > 0 {
+		a.sawLap = true
+	}
+	if a.count != cseg {
+		a.count, a.at = cseg, now
+		return 0
+	}
+	if perSeg <= 0 {
+		return 0
+	}
+	f := now.Sub(a.at).Seconds() / perSeg
+	if f < 0 {
+		return 0
+	}
+	if f > 2.9 {
+		f = 2.9
+	}
+	return f
+}
+
+// clock converts a timestamp into the timezone the clocks setting selects.
+func (r *Renderer) clock(t time.Time) time.Time {
+	switch r.clockMode {
+	case TimeTrack:
+		return t.In(time.FixedZone("track", int(r.clockOffset/time.Second)))
+	case TimeUTC:
+		return t.UTC()
+	}
+	return t.Local()
 }
 
 func mustFace(ttf []byte, size float64) font.Face {
@@ -543,6 +676,7 @@ func NewRenderer() *Renderer {
 		mono:      mustFace(gomono.TTF, 40*scale),
 		monoSmall: mustFace(gomono.TTF, 30*scale),
 		monoTiny:  mustFace(gomono.TTF, 24*scale),
+		segAnim:   map[int]*segAnimState{},
 	}
 }
 
@@ -660,19 +794,21 @@ func (r *Renderer) Render(st model.State, tab Tab, trackMap *model.TrackMap, pop
 	img := image.NewRGBA(image.Rect(0, 0, Width, Height))
 	draw.Draw(img, img.Bounds(), image.NewUniform(white), image.Point{}, draw.Src)
 
+	r.clockMode, r.clockOffset = opts.TimeMode, st.TrackOffset
+
 	bodyTop := r.header(img, st, opts)
 
 	switch tab {
 	case TabMap:
 		r.renderMap(img, st, trackMap, bodyTop, opts)
 	case TabRaceControl:
-		r.renderRaceControl(img, st, bodyTop)
+		r.renderRaceControl(img, st, bodyTop, opts.RCPage)
 	default:
-		r.renderTiming(img, st, bodyTop, opts.ShowTcam)
+		r.renderTiming(img, st, bodyTop, opts.ShowTcam, opts.Mini)
 	}
 
 	if popupDriver != 0 && tab == TabTiming {
-		r.drawLapPopup(img, st, popupDriver)
+		r.drawLapPopup(img, st, trackMap, popupDriver, opts.PopupLap)
 	}
 	r.tabBar(img, tab)
 	if opts.TimePopup && st.IsReplay {
@@ -681,8 +817,92 @@ func (r *Renderer) Render(st model.State, tab Tab, trackMap *model.TrackMap, pop
 	return img
 }
 
-// drawLapPopup overlays a panel with the driver's recent laps.
-func (r *Renderer) drawLapPopup(img *image.RGBA, st model.State, num int) {
+// lapPopupGeom is the driver popup's layout, computed identically by drawing
+// and hit-testing so taps land on what is shown. sel is the selected past
+// lap whose map is open (0 = the lap in progress).
+type lapPopupGeom struct {
+	x0, x1, y0 int
+	panelH     int
+	rows       int // history rows shown
+	mapH       int // 0 = no lap map
+	mapSecs    [3]model.Sector
+	mapLabel   string
+}
+
+func lapPopupLayout(st model.State, tm *model.TrackMap, num, sel int) lapPopupGeom {
+	g := lapPopupGeom{mapLabel: "THIS LAP"}
+	for i := range st.Standings {
+		if st.Standings[i].Number == num {
+			g.mapSecs = st.Standings[i].Sectors
+			break
+		}
+	}
+	hist := st.LapHistory[num]
+	if sel > 0 {
+		for _, rec := range hist {
+			if rec.Lap == sel {
+				g.mapSecs = rec.Sectors
+				g.mapLabel = fmt.Sprintf("LAP %d", sel)
+				break
+			}
+		}
+	}
+	if tm != nil && len(tm.Points) >= 2 {
+		for _, s := range g.mapSecs {
+			if len(s.Segments) > 0 {
+				g.mapH = px(500)
+				break
+			}
+		}
+	}
+	g.rows = len(hist)
+	if max := (tabBarTop - px(220) - px(150) - g.mapH - px(40)) / px(56); g.rows > max {
+		g.rows = max
+	}
+	if g.rows > 18 {
+		g.rows = 18
+	}
+	if g.rows < 1 {
+		g.rows = 1 // room for the "no laps" note
+	}
+	g.x0, g.x1 = px(220), Width-px(220)
+	g.panelH = px(150) + g.rows*px(56) + g.mapH + px(40)
+	g.y0 = (tabBarTop - g.panelH) / 2
+	if g.y0 < px(200) {
+		g.y0 = px(200)
+	}
+	return g
+}
+
+// HitLapPopupRow maps a tap inside the driver popup to the lap number of the
+// history row it landed on (0 = none). sel must be the currently selected
+// lap, since selection shifts the layout the same way it does when drawing.
+func HitLapPopupRow(st model.State, tm *model.TrackMap, num, sel, x, y int) int {
+	g := lapPopupLayout(st, tm, num, sel)
+	hist := st.LapHistory[num]
+	if len(hist) == 0 || x < g.x0 || x > g.x1 {
+		return 0
+	}
+	top := g.y0 + 130 + px(18)
+	if y < top {
+		return 0
+	}
+	k := (y - top) / px(56)
+	if k >= g.rows {
+		return 0
+	}
+	i := len(hist) - 1 - k
+	if i < 0 || hist[i].Lap <= 0 {
+		return 0
+	}
+	return hist[i].Lap
+}
+
+// drawLapPopup overlays a panel with the driver's recent laps and, when the
+// track outline and mini-segments are in hand, a lap painted onto the map —
+// where the driver was fast and slow. sel picks a past lap for the map
+// (0 = the lap in progress); tapping a history row selects it.
+func (r *Renderer) drawLapPopup(img *image.RGBA, st model.State, tm *model.TrackMap, num, sel int) {
 	var drv *model.Standing
 	for i := range st.Standings {
 		if st.Standings[i].Number == num {
@@ -691,20 +911,9 @@ func (r *Renderer) drawLapPopup(img *image.RGBA, st model.State, num int) {
 		}
 	}
 	hist := st.LapHistory[num]
-
-	rows := len(hist)
-	if rows > 18 {
-		rows = 18
-	}
-	if rows == 0 {
-		rows = 1 // room for the "no laps" note
-	}
-	x0, x1 := px(220), Width-px(220)
-	panelH := px(150) + rows*px(56) + px(40)
-	y0 := (tabBarTop - panelH) / 2
-	if y0 < px(200) {
-		y0 = px(200)
-	}
+	g := lapPopupLayout(st, tm, num, sel)
+	rows, mapH := g.rows, g.mapH
+	x0, x1, y0, panelH := g.x0, g.x1, g.y0, g.panelH
 
 	// Panel with border.
 	fillRect(img, x0-6, y0-6, x1-x0+12, panelH+12, black)
@@ -718,7 +927,11 @@ func (r *Renderer) drawLapPopup(img *image.RGBA, st model.State, num int) {
 	}
 	fillRect(img, x0+30, y0+28, 16, 56, teamColor(colour))
 	r.text(img, r.h1, black, x0+70, y0+70, fmt.Sprintf("%s — LAST LAPS", name))
-	r.textRight(img, r.small, gray, x1-30, y0+70, "tap to close")
+	hint := "tap to close"
+	if mapH > 0 && len(hist) > 0 {
+		hint = "tap a lap for its map · outside closes"
+	}
+	r.textRight(img, r.small, gray, x1-30, y0+70, hint)
 
 	var (
 		cLap  = px(120)
@@ -736,14 +949,21 @@ func (r *Renderer) drawLapPopup(img *image.RGBA, st model.State, num int) {
 
 	if len(hist) == 0 {
 		r.text(img, r.row, gray, x0+60, hy+70, "No completed laps yet.")
-		return
 	}
 	// Newest first.
 	y := hy + 56
-	for i := len(hist) - 1; i >= 0 && len(hist)-1-i < 18; i-- {
+	for i := len(hist) - 1; i >= 0 && len(hist)-1-i < rows; i-- {
 		rec := hist[i]
 		if (len(hist)-1-i)%2 == 1 {
 			fillRect(img, x0+16, y-38, x1-x0-32, 52, stripe)
+		}
+		if sel > 0 && rec.Lap == sel {
+			// Frame the lap whose map is open below.
+			bx, by, bw, bh := x0+16, y-38, x1-x0-32, 52
+			fillRect(img, bx, by, bw, 3, black)
+			fillRect(img, bx, by+bh-3, bw, 3, black)
+			fillRect(img, bx, by, 3, bh, black)
+			fillRect(img, bx+bw-3, by, 3, bh, black)
 		}
 		r.text(img, r.monoSmall, black, x0+cLap-60, y, fmt.Sprint(rec.Lap))
 		for si, right := range []int{cS1, cS2, cS3} {
@@ -779,6 +999,100 @@ func (r *Renderer) drawLapPopup(img *image.RGBA, st model.State, num int) {
 		r.textRight(img, r.monoSmall, tcol, x0+cTime, y, tv)
 		y += px(56)
 	}
+
+	if mapH > 0 {
+		my0 := y0 + px(150) + rows*px(56) + px(20)
+		r.text(img, r.small, gray, x0+30, my0+px(20), g.mapLabel+" — mini-sector pace on track")
+		r.drawLapTrack(img, tm, g.mapSecs, st.SectorSegments,
+			x0+px(50), my0+px(50), x1-px(50), my0+mapH-px(40))
+	}
+}
+
+// drawLapTrack paints the track outline with a driver's mini-segment
+// statuses for the lap in progress — purple/green/orange where set, the
+// plain light outline where the car hasn't been yet — fitted into the given
+// rectangle with the same rotation as the map tab.
+func (r *Renderer) drawLapTrack(img *image.RGBA, tm *model.TrackMap, secs [3]model.Sector, counts [3]int, rx0, ry0, rx1, ry1 int) {
+	// The lap's statuses on the session's full mini-sector grid, S1 through
+	// S3, zero-padded where a sector hasn't been revealed.
+	var statuses []int
+	for i, s := range secs {
+		seg := patchSegmentHoles(s.Segments)
+		n := counts[i]
+		if len(seg) > n {
+			n = len(seg)
+		}
+		for j := 0; j < n; j++ {
+			v := 0
+			if j < len(seg) {
+				v = seg[j]
+			}
+			statuses = append(statuses, v)
+		}
+	}
+	total := len(statuses)
+	if total == 0 || tm == nil || len(tm.Points) < 2 {
+		return
+	}
+
+	rot := tm.Rotation * math.Pi / 180
+	sin, cos := math.Sin(rot), math.Cos(rot)
+	minX, minY := math.Inf(1), math.Inf(1)
+	maxX, maxY := math.Inf(-1), math.Inf(-1)
+	pts := make([][2]float64, len(tm.Points))
+	for i, p := range tm.Points {
+		x, y := p[0]*cos-p[1]*sin, p[0]*sin+p[1]*cos
+		pts[i] = [2]float64{x, y}
+		minX, maxX = math.Min(minX, x), math.Max(maxX, x)
+		minY, maxY = math.Min(minY, y), math.Max(maxY, y)
+	}
+	scale := math.Min(float64(rx1-rx0)/(maxX-minX), float64(ry1-ry0)/(maxY-minY))
+	offX := float64(rx0+rx1)/2 - (minX+maxX)/2*scale
+	offY := float64(ry0+ry1)/2 + (minY+maxY)/2*scale
+	n := len(pts)
+	sx := make([]float64, n)
+	sy := make([]float64, n)
+	for i, p := range pts {
+		sx[i], sy[i] = p[0]*scale+offX, -p[1]*scale+offY
+	}
+	cumAt := make([]float64, n)
+	for i := 1; i < n; i++ {
+		cumAt[i] = cumAt[i-1] + math.Hypot(sx[i]-sx[i-1], sy[i]-sy[i-1])
+	}
+	length := cumAt[n-1]
+	if length <= 0 {
+		return
+	}
+
+	// statusAt maps a lap-distance fraction to the covering mini-segment:
+	// through the circuit's mini-sector boundary table when it is known
+	// (segments are ~equal-time, not equal-length), else proportionally.
+	statusAt := func(f float64) int {
+		idx := 0
+		if mini := tm.MiniSectors; len(mini) > 0 {
+			k := 0
+			for k+1 < len(mini) && mini[k+1] <= f {
+				k++
+			}
+			idx = k * total / len(mini)
+		} else {
+			idx = int(f * float64(total))
+		}
+		if idx >= total {
+			idx = total - 1
+		}
+		return statuses[idx]
+	}
+	for i := 1; i < n; i++ {
+		f := (cumAt[i-1] + cumAt[i]) / 2 / length
+		col, rad := color.Color(light), 7
+		if s := statusAt(f); s != 0 {
+			col, rad = segmentColor(s), 9
+		}
+		drawLine(img, sx[i-1], sy[i-1], sx[i], sy[i], rad, col)
+	}
+	// Start/finish tick.
+	r.drawSectorMarker(img, sx, sy, cumAt, 0)
 }
 
 // header draws the shared title area; returns the y where the body starts.
@@ -802,7 +1116,7 @@ func (r *Renderer) header(img *image.RGBA, st model.State, opts ViewOptions) int
 	// two big lines and the session name moves up into the status strip.
 	rcMsg, rcFlag := "", ""
 	if opts.HeaderRC {
-		if rcMsg, rcFlag = latestRC(st); rcMsg == "" {
+		if rcMsg, rcFlag = r.latestRC(st); rcMsg == "" {
 			rcMsg = "No race control messages yet"
 		}
 	}
@@ -821,14 +1135,14 @@ func (r *Renderer) header(img *image.RGBA, st model.State, opts ViewOptions) int
 		pre := "source: " + st.Source + " · "
 		r.text(img, r.small, gray, x, px(42), pre)
 		x += font.MeasureString(r.small, pre).Ceil()
-		clock := st.LastUpdate.Local().Format("15:04:05")
+		clock := r.clock(st.LastUpdate).Format("15:04:05")
 		r.text(img, r.monoSmall, black, x, px(42), clock)
 		cw := font.MeasureString(r.monoSmall, clock).Ceil()
 		fillRect(img, x, px(50), cw, px(2), black) // underline: this is tappable
 		r.text(img, r.small, gray, x+cw+px(16), px(42), "· tap to jump")
 	default:
 		r.text(img, r.small, gray, margin, px(42),
-			"source: "+st.Source+" · "+st.LastUpdate.Local().Format("15:04:05"))
+			"source: "+st.Source+" · "+r.clock(st.LastUpdate).Format("15:04:05"))
 	}
 	if rcMsg != "" {
 		// The big lines now carry the message, so keep the session name here.
@@ -916,12 +1230,17 @@ func (r *Renderer) header(img *image.RGBA, st model.State, opts ViewOptions) int
 
 	y += px(46)
 	fillRect(img, margin, y, Width-2*margin, px(4), black)
-	return y + px(54)
+	return headerBodyTop()
 }
+
+// headerBodyTop is where tab content starts under the header — the sum of
+// header()'s line steps, kept here so pagination can size pages without an
+// image to draw on.
+func headerBodyTop() int { return margin + 60 + px(56) + px(46) + px(54) }
 
 // ---- Timing tab ----
 
-func (r *Renderer) renderTiming(img *image.RGBA, st model.State, y int, showTcam bool) {
+func (r *Renderer) renderTiming(img *image.RGBA, st model.State, y int, showTcam bool, mini MiniStyle) {
 	var (
 		colPos  = margin
 		colBar  = margin + px(80)
@@ -1072,6 +1391,12 @@ func (r *Renderer) renderTiming(img *image.RGBA, st model.State, y int, showTcam
 				v = "--"
 			}
 			r.textRight(img, r.monoSmall, col, right, base, v)
+			if mini == MiniDots {
+				drawSegmentDots(img, right, ry, sec.Segments)
+			}
+		}
+		if mini == MiniLine {
+			drawSegmentLine(img, colS1-(colS2-colS1), colS3, ry, s.Sectors, st.SectorSegments)
 		}
 
 		lapCol := color.Color(black)
@@ -1104,6 +1429,127 @@ func (r *Renderer) renderTiming(img *image.RGBA, st model.State, y int, showTcam
 	if len(st.Standings) == 0 {
 		r.text(img, r.row, gray, margin, y+80, "No timing data yet for this session.")
 	}
+}
+
+// drawSegmentDots draws one small dot per mini-segment of a sector, in track
+// order, right-aligned under the sector time whose column ends at right.
+// ry is the row top; the dots sit in the strip below the time's baseline.
+func drawSegmentDots(img *image.RGBA, right, ry int, segs []int) {
+	segs = patchSegmentHoles(segs)
+	n := len(segs)
+	if n == 0 {
+		return
+	}
+	rad := px(4)
+	step := 2*rad + px(4)
+	// The sector columns are px(135) apart; shrink the pitch if a circuit has
+	// more mini-segments than fit at the comfortable spacing.
+	if maxW := px(120); n*step > maxW {
+		step = maxW / n
+	}
+	cy := ry + px(68)
+	for i, status := range segs {
+		cx := right - rad - (n-1-i)*step
+		fillCircle(img, cx, cy, rad, segmentColor(status))
+	}
+}
+
+// drawSegmentLine draws the lap's mini-segments as one continuous segmented
+// line spanning the S1–S3 columns from x0 to x1 — left to right around the
+// lap, every segment the same width (the F1 mini-sector grid is ~equal-time)
+// with a small break at each sector boundary. A sector with no data yet
+// keeps its share of the line as placeholders, sized by the session's known
+// segment counts, so the bar always reads as the same full lap.
+func drawSegmentLine(img *image.RGBA, x0, x1, ry int, secs [3]model.Sector, counts [3]int) {
+	var n [3]int
+	total := 0
+	for i, s := range secs {
+		n[i] = len(s.Segments)
+		if n[i] == 0 {
+			n[i] = counts[i]
+		}
+		total += n[i]
+	}
+	if total == 0 {
+		return
+	}
+	gaps := 0
+	for _, c := range n {
+		if c > 0 {
+			gaps++
+		}
+	}
+	if gaps > 0 {
+		gaps--
+	}
+	secGap := px(10)
+	w := float64(x1-x0-gaps*secGap) / float64(total)
+	y, h := ry+px(62), px(10)
+	x := float64(x0)
+	for i, s := range secs {
+		seg := patchSegmentHoles(s.Segments)
+		for j := 0; j < n[i]; j++ {
+			status := 0
+			if j < len(seg) {
+				status = seg[j]
+			}
+			x2 := x + w
+			fillRect(img, int(x)+1, y, int(x2)-int(x)-2, h, segmentColor(status))
+			x = x2
+		}
+		if n[i] > 0 {
+			x += float64(secGap)
+		}
+	}
+}
+
+// patchSegmentHoles treats a zero with a later nonzero status in the same
+// sector as crossed-but-unreported (OpenF1 leaves the first S1 segment null
+// on most laps), so it draws as plain completed rather than a not-yet-run
+// gap in the middle of the lap.
+func patchSegmentHoles(segs []int) []int {
+	last := -1
+	for i, s := range segs {
+		if s != 0 {
+			last = i
+		}
+	}
+	patched := false
+	for i := 0; i < last; i++ {
+		if segs[i] == 0 {
+			patched = true
+			break
+		}
+	}
+	if !patched {
+		return segs
+	}
+	out := make([]int, len(segs))
+	copy(out, segs)
+	for i := 0; i < last; i++ {
+		if out[i] == 0 {
+			out[i] = 2048
+		}
+	}
+	return out
+}
+
+// segmentColor maps a feed mini-segment status to the timing palette: the
+// same purple/green/yellow the sector times use, gray for the pit lane, and
+// the stripe gray as a placeholder for segments not run yet this lap. Codes
+// the feed hasn't documented (e.g. 2052) count as plain completed.
+func segmentColor(status int) color.RGBA {
+	switch status {
+	case 0:
+		return stripe // not run yet
+	case 2049:
+		return green
+	case 2051:
+		return purple
+	case 2064:
+		return gray // pit lane
+	}
+	return yellow // 2048 and other completed variants
 }
 
 // isRace reports whether the state describes a race (default when unknown).
@@ -1163,6 +1609,57 @@ const (
 	MarkerDot                       // plain team dot, no text
 )
 
+// MiniStyle selects how mini-sectors are drawn under the sector times.
+type MiniStyle int
+
+const (
+	MiniOff  MiniStyle = iota
+	MiniDots           // a dot cluster under each sector time
+	MiniLine           // one continuous segmented line across S1–S3
+)
+
+// MiniStyleLabels backs the settings-screen chips.
+var MiniStyleLabels = []string{"Off", "Dots", "Line"}
+
+// TimeMode selects the timezone for on-screen clocks (header time, race
+// control timestamps, the replay clock).
+type TimeMode int
+
+const (
+	TimeDevice TimeMode = iota // this device's local timezone
+	TimeTrack                  // the circuit's local time (feed GMT offset)
+	TimeUTC
+)
+
+// TimeModeLabels backs the settings-screen chips.
+var TimeModeLabels = []string{"Device", "Track", "UTC"}
+
+// zoneNote describes what a clock mode resolves to right now — the current
+// time there plus the zone (name and/or UTC offset) — for the CLOCKS caption.
+func zoneNote(mode TimeMode, trackOffset time.Duration) string {
+	var t time.Time
+	switch mode {
+	case TimeTrack:
+		t = time.Now().In(time.FixedZone("track", int(trackOffset/time.Second)))
+	case TimeUTC:
+		t = time.Now().UTC()
+	default:
+		t = time.Now().Local()
+	}
+	name, off := t.Zone()
+	sign := "+"
+	if off < 0 {
+		sign, off = "-", -off
+	}
+	utc := fmt.Sprintf("UTC%s%02d:%02d", sign, off/3600, off%3600/60)
+	// A real zone abbreviation (CEST, JST) is worth showing; the synthetic
+	// "track"/"UTC" names and bare numeric ones are not.
+	if name != "" && name != "track" && name != "UTC" && name[0] != '+' && name[0] != '-' {
+		return fmt.Sprintf("now %s (%s, %s)", t.Format("15:04"), name, utc)
+	}
+	return fmt.Sprintf("now %s (%s)", t.Format("15:04"), utc)
+}
+
 // TrackingMode selects how car positions on the map are sourced.
 type TrackingMode int
 
@@ -1179,10 +1676,15 @@ type ViewOptions struct {
 	Hidden    map[int]bool
 	Marker    MarkerStyle
 	Tracking  TrackingMode
-	ShowTcam  bool // yellow T-cam border on yellow-camera drivers
-	Mono      bool // grayscale markers (faster e-ink refresh)
-	HeaderRC  bool // header subtitle shows the newest race control message
-	TimePopup bool // the replay clock popup is open
+	ShowTcam  bool      // yellow T-cam border on yellow-camera drivers
+	Mini      MiniStyle // mini-sectors under the timing tab's sector times
+	MapMini   bool      // mini-sector boundary ticks on the map's outline
+	Mono      bool      // grayscale markers (faster e-ink refresh)
+	HeaderRC  bool      // header subtitle shows the newest race control message
+	TimePopup bool      // the replay clock popup is open
+	RCPage    int       // race control page (0 = newest messages)
+	PopupLap  int       // past lap selected in the driver popup (0 = current)
+	TimeMode  TimeMode  // timezone for on-screen clocks
 }
 
 // MarkerLabels / TrackingLabels back the settings-screen chips.
@@ -1481,6 +1983,24 @@ func (r *Renderer) renderMap(img *image.RGBA, st model.State, tm *model.TrackMap
 	for _, pct := range markers {
 		r.drawSectorMarker(img, sx, sy, cumAt, pct)
 	}
+	// Mini-sector boundaries as lighter ticks between the sector markers —
+	// from the circuit's boundary table when known, else the curvature-
+	// weighted segment split.
+	if opts.MapMini {
+		var pcts []float64
+		if mini := tm.MiniSectors; len(mini) > 0 {
+			for _, f := range mini {
+				pcts = append(pcts, f*100)
+			}
+		} else if bounds != nil {
+			for k := 1; k < totalSeg; k++ {
+				pcts = append(pcts, bounds[k])
+			}
+		}
+		for _, pct := range pcts {
+			r.drawMiniTick(img, sx, sy, cumAt, pct)
+		}
+	}
 
 	for _, c := range tm.Corners {
 		rx, ry := rotate(c.X, c.Y)
@@ -1525,15 +2045,61 @@ func (r *Renderer) renderMap(img *image.RGBA, st model.State, tm *model.TrackMap
 			return 0
 		}
 		for _, s := range st.Standings {
-			if opts.Hidden[s.Number] || s.Retired || s.KnockedOut || s.InPit || s.CompletedSegments <= 0 {
+			if opts.Hidden[s.Number] || s.Retired || s.KnockedOut || s.InPit {
 				continue
 			}
 			cseg := s.CompletedSegments
 			if cseg >= len(bounds) {
 				cseg = len(bounds) - 1
 			}
-			px, py := pointAtPercent(sx, sy, cumAt, bounds[cseg])
-			r.drawDriverDot(img, int(px), int(py), dotR, s.Number, s.Acronym, teamColor(s.TeamColour), opts.Marker, true, opts.ShowTcam && yellowTcam[s.Number], opts.Mono)
+			// Glide toward the next boundary while waiting for the crossing,
+			// paced by the driver's own lap time.
+			perSeg := 90.0 / float64(max(totalSeg, 1))
+			if lap := model.ParseLapSeconds(s.LastLap); lap > 0 && totalSeg > 0 {
+				perSeg = lap / float64(totalSeg)
+			}
+			f := r.segProgress(s.Number, cseg, st.LastUpdate, perSeg)
+			// No segments this lap: keep gliding out of start/finish if the
+			// car has run laps before (its count just wrapped to zero) —
+			// but never park never-seen cars on the line.
+			if cseg <= 0 {
+				a := r.segAnim[s.Number]
+				if a == nil || !a.sawLap {
+					continue
+				}
+				cseg = 0
+			}
+			// Predicted position: whole predicted segments ahead of the
+			// confirmed count, plus a fraction into the next, clamped to
+			// stay this side of start/finish until the real wrap arrives.
+			idx := cseg + int(f)
+			frac := f - float64(int(f))
+			if idx >= len(bounds)-1 {
+				idx, frac = len(bounds)-2, 0.9
+			}
+			pct := bounds[idx] + (bounds[idx+1]-bounds[idx])*frac
+			// A car that has crossed no segment in a while is somewhere
+			// unknown (stopped, garage, red flag): ring it with a "?" badge,
+			// and after long enough drop it from the map entirely.
+			stall := time.Duration(0)
+			if a := r.segAnim[s.Number]; a != nil {
+				stall = st.LastUpdate.Sub(a.at)
+			}
+			if stall > microStallHide {
+				continue
+			}
+			cx, cy := pointAtPercent(sx, sy, cumAt, pct)
+			stalled := stall > microStallWarn
+			if stalled {
+				fillCircle(img, int(cx), int(cy), dotR+8, black)
+			}
+			r.drawDriverDot(img, int(cx), int(cy), dotR, s.Number, s.Acronym, teamColor(s.TeamColour), opts.Marker, true, opts.ShowTcam && yellowTcam[s.Number], opts.Mono)
+			if stalled {
+				bx, by := int(cx)+dotR+6, int(cy)-dotR-6
+				fillCircle(img, bx, by, 18, black)
+				fillCircle(img, bx, by, 15, white)
+				r.textCenter(img, r.small, black, bx, by+11, "?")
+			}
 			drawn++
 		}
 		return drawn
@@ -1548,6 +2114,8 @@ func (r *Renderer) renderMap(img *image.RGBA, st model.State, tm *model.TrackMap
 	case TrackMicro:
 		if drawMicro() == 0 {
 			note("No live positions yet (session not running).")
+		} else {
+			note("Positions estimated from sector timing.")
 		}
 	default: // TrackAuto
 		switch {
@@ -1614,6 +2182,23 @@ func (r *Renderer) drawSectorMarker(img *image.RGBA, sx, sy, arc []float64, pct 
 	nx, ny := -ty, tx // unit normal across the track
 	const half = 7    // track line is ~14px wide, so this stays within it
 	drawLine(img, px-nx*half, py-ny*half, px+nx*half, py+ny*half, 4, black)
+}
+
+// drawMiniTick marks a mini-sector boundary: a thinner, gray version of the
+// sector marker so the grid reads without competing with the S1/S2/S3 ticks.
+func (r *Renderer) drawMiniTick(img *image.RGBA, sx, sy, arc []float64, pct float64) {
+	px, py := pointAtPercent(sx, sy, arc, pct)
+	ax, ay := pointAtPercent(sx, sy, arc, pct+0.6)
+	bx, by := pointAtPercent(sx, sy, arc, pct-0.6)
+	tx, ty := ax-bx, ay-by
+	tl := math.Hypot(tx, ty)
+	if tl < 1e-6 {
+		tx, ty, tl = 1, 0, 1
+	}
+	tx, ty = tx/tl, ty/tl
+	nx, ny := -ty, tx // unit normal across the track
+	const half = 7
+	drawLine(img, px-nx*half, py-ny*half, px+nx*half, py+ny*half, 2, gray)
 }
 
 // smoothedCurvatures approximates per-point track curvature (via the turn
@@ -1734,25 +2319,120 @@ func pointAtPercent(sx, sy, arc []float64, pct float64) (float64, float64) {
 
 // ---- Race control tab ----
 
-func (r *Renderer) renderRaceControl(img *image.RGBA, st model.State, y int) {
+// rcTextX is where message text starts, right of the timestamp column.
+func rcTextX() int { return margin + px(130) }
+
+// rcPagerRow is the pager button row of the race control tab, sitting just
+// above the tab bar.
+func rcPagerRow() (y0, y1 int) {
+	y1 = tabBarTop - px(24)
+	return y1 - px(76), y1
+}
+
+// rcChipW is the drawn width of a message's flag chip (0 = no chip).
+func (r *Renderer) rcChipW(rc model.RaceControl) int {
+	if rc.Flag == "" || rc.Flag == "CLEAR" {
+		return 0
+	}
+	return font.MeasureString(r.small, rc.Flag).Ceil() + 28
+}
+
+// rcMessageH is the vertical space one message takes, wrapping included.
+func (r *Renderer) rcMessageH(rc model.RaceControl) int {
+	x := rcTextX()
+	if cw := r.rcChipW(rc); cw > 0 {
+		x += cw + 20
+	}
+	lines := wrapWidth(r.row, rc.Message, Width-margin-x, Width-margin-rcTextX(), 3)
+	n := len(lines)
+	if n < 1 {
+		n = 1
+	}
+	return 62 + 48*(n-1)
+}
+
+// raceControlPageStarts returns the index of the first message on each page,
+// newest first. A single screenful means one pager-less page; otherwise the
+// pages stop above the pager row.
+func (r *Renderer) raceControlPageStarts(st model.State) []int {
+	top := headerBodyTop() + px(56)
+	limit := tabBarTop - px(80)
+	fits := func(lim int) bool {
+		y := top
+		for _, rc := range st.RaceControl {
+			if y > lim {
+				return false
+			}
+			y += r.rcMessageH(rc)
+		}
+		return true
+	}
+	if fits(limit) {
+		return []int{0}
+	}
+	pagerY0, _ := rcPagerRow()
+	limit = pagerY0 - px(50)
+	starts := []int{0}
+	y := top
+	for i, rc := range st.RaceControl {
+		if y > limit {
+			starts = append(starts, i)
+			y = top
+		}
+		y += r.rcMessageH(rc)
+	}
+	return starts
+}
+
+// RaceControlPages is how many pages the current messages span — for the
+// app's page stepping.
+func (r *Renderer) RaceControlPages(st model.State) int {
+	return len(r.raceControlPageStarts(st))
+}
+
+// HitRaceControlPager maps a touch on the race control tab to the pager:
+// -1 = NEWER, +1 = OLDER, 0 = neither. Purely geometric; the app bounds the
+// step with RaceControlPages.
+func HitRaceControlPager(x, y int) int {
+	y0, y1 := rcPagerRow()
+	if y < y0-20 || y > y1+20 {
+		return 0
+	}
+	switch {
+	case x >= margin-20 && x <= margin+btnW+20:
+		return -1
+	case x >= Width-margin-btnW-20 && x <= Width-margin+20:
+		return 1
+	}
+	return 0
+}
+
+func (r *Renderer) renderRaceControl(img *image.RGBA, st model.State, y int, page int) {
 	r.text(img, r.small, gray, margin, y, "RACE CONTROL — LATEST FIRST")
 	y += px(56)
 	if len(st.RaceControl) == 0 {
 		r.text(img, r.row, gray, margin, y+40, "No race control messages yet.")
 		return
 	}
-	textX := margin + px(130)
-	for _, rc := range st.RaceControl {
-		if y > tabBarTop-px(80) {
+	starts := r.raceControlPageStarts(st)
+	if page < 0 || page >= len(starts) {
+		page = 0
+	}
+	limit := tabBarTop - px(80)
+	if len(starts) > 1 {
+		pagerY0, _ := rcPagerRow()
+		limit = pagerY0 - px(50)
+	}
+	textX := rcTextX()
+	for _, rc := range st.RaceControl[starts[page]:] {
+		if y > limit {
 			break
 		}
-		r.text(img, r.monoSmall, gray, margin, y, rc.Date.Local().Format("15:04"))
+		r.text(img, r.monoSmall, gray, margin, y, r.clock(rc.Date).Format("15:04"))
 		x := textX
-		if rc.Flag != "" && rc.Flag != "CLEAR" {
-			chip := rc.Flag
-			cw := font.MeasureString(r.small, chip).Ceil() + 28
+		if cw := r.rcChipW(rc); cw > 0 {
 			fillRect(img, x, y-30, cw, 42, flagColor(flagLabel(rc.Flag)))
-			r.text(img, r.small, white, x+14, y, chip)
+			r.text(img, r.small, white, x+14, y, rc.Flag)
 			x += cw + 20
 		}
 		lines := wrapWidth(r.row, rc.Message, Width-margin-x, Width-margin-textX, 3)
@@ -1767,6 +2447,13 @@ func (r *Renderer) renderRaceControl(img *image.RGBA, st model.State, y int) {
 			r.text(img, r.row, black, lx, y, line)
 		}
 		y += 62
+	}
+	if pages := len(starts); pages > 1 {
+		y0, y1 := rcPagerRow()
+		r.drawPagerButton(img, margin, y0, y1, "< NEWER", page > 0)
+		r.drawPagerButton(img, Width-margin-btnW, y0, y1, "OLDER >", page < pages-1)
+		r.textCenter(img, r.row, gray, Width/2, y0+(y1-y0)/2+14,
+			fmt.Sprintf("PAGE %d/%d", page+1, pages))
 	}
 }
 
@@ -1903,10 +2590,10 @@ func yellowSectorLabel(st model.State) string {
 	return label + strings.Join(parts, ", ")
 }
 
-// latestRC returns the newest race control message (prefixed with its local
-// time) and the flag chip to draw before it, if any. State.RaceControl is
-// newest first in both data sources.
-func latestRC(st model.State) (msg, flag string) {
+// latestRC returns the newest race control message (prefixed with its time,
+// in the clocks setting's timezone) and the flag chip to draw before it, if
+// any. State.RaceControl is newest first in both data sources.
+func (r *Renderer) latestRC(st model.State) (msg, flag string) {
 	if len(st.RaceControl) == 0 {
 		return "", ""
 	}
@@ -1914,7 +2601,7 @@ func latestRC(st model.State) (msg, flag string) {
 	if m.Flag != "" && m.Flag != "CLEAR" {
 		flag = flagLabel(m.Flag)
 	}
-	return m.Date.Local().Format("15:04") + "  " + m.Message, flag
+	return r.clock(m.Date).Format("15:04") + "  " + m.Message, flag
 }
 
 func flagLabel(flag string) string {
@@ -2204,7 +2891,7 @@ func (r *Renderer) drawTimePopup(img *image.RGBA, st model.State) {
 
 	r.text(img, r.h1, black, x0+40, y0+70, "REPLAY TIME")
 	r.textRight(img, r.small, gray, x1-40, y0+70, "tap outside to close")
-	r.textCenter(img, r.title, black, (x0+x1)/2, y0+170, st.LastUpdate.Local().Format("15:04:05"))
+	r.textCenter(img, r.title, black, (x0+x1)/2, y0+170, r.clock(st.LastUpdate).Format("15:04:05"))
 
 	for i, m := range SeekMinutes {
 		bx0, by0, bx1, by1 := seekBtnRect(i)
@@ -2238,8 +2925,8 @@ func (r *Renderer) drawGear(img *image.RGBA, cx, cy, rad int, col color.Color) {
 }
 
 // drawChip draws one selectable option chip (filled when selected).
-func (r *Renderer) drawChip(img *image.RGBA, section, i int, label string, sel bool) {
-	x0, y0, x1, y1 := settingsChipRect(section, i)
+func (r *Renderer) drawChip(img *image.RGBA, kind Setting, row, i int, label string, sel bool) {
+	x0, y0, x1, y1 := settingsChipRect(kind, row, i)
 	face := r.row
 	if font.MeasureString(face, label).Ceil() > x1-x0-28 {
 		face = r.small
@@ -2256,24 +2943,45 @@ func (r *Renderer) drawChip(img *image.RGBA, section, i int, label string, sel b
 	r.textCenter(img, face, black, (x0+x1)/2, y0+(y1-y0)/2+14, label)
 }
 
-// drawSettingsSection draws a section label, its chip row, and a caption.
-func (r *Renderer) drawSettingsSection(img *image.RGBA, section int, label string, chips []string, selected int, note string) {
-	r.text(img, r.h1, black, margin, setSecTop+section*setSecGap, label)
+// drawSettingsSection draws a section label, its chip row, and a caption at
+// the given on-screen row.
+func (r *Renderer) drawSettingsSection(img *image.RGBA, kind Setting, row int, label string, chips []string, selected int, note string) {
+	r.text(img, r.h1, black, margin, setSecTop+row*setSecGap, label)
 	for i, c := range chips {
-		r.drawChip(img, section, i, c, i == selected)
+		r.drawChip(img, kind, row, i, c, i == selected)
 	}
 	if note != "" {
-		_, _, _, y1 := settingsChipRect(section, 0)
-		r.text(img, r.small, gray, margin, y1+setNoteDy, note)
+		_, _, _, y1 := settingsChipRect(kind, row, 0)
+		// One line only — ellipsize rather than run off the panel edge.
+		if lines := wrapWidth(r.small, note, Width-2*margin, Width-2*margin, 1); len(lines) > 0 {
+			r.text(img, r.small, gray, margin, y1+setNoteDy, lines[0])
+		}
 	}
 }
 
-// RenderSettings draws the settings screen: an overall-best-sectors toggle,
-// the live delay (TV sync), and the replay speed, plus a CLOSE button
-// (HitClose). Controls are hit-tested via HitSettingsControl.
+// RenderSettings draws the settings screen — the sections of v.Page, a CLOSE
+// button (HitClose), and the PREV/NEXT pager (HitSettingsPager) when the
+// sections span several pages. Controls are hit-tested via HitSettingsControl.
 func (r *Renderer) RenderSettings(v SettingsView) *image.RGBA {
 	img := image.NewRGBA(image.Rect(0, 0, Width, Height))
 	draw.Draw(img, img.Bounds(), image.NewUniform(white), image.Point{}, draw.Src)
+
+	vis := visibleSettings(v.SessionMode)
+	per := settingsPerPage(len(vis))
+	pages := (len(vis) + per - 1) / per
+	page := v.Page
+	if page < 0 || page >= pages {
+		page = 0
+	}
+	// sec draws one settings section at its row, skipping controls hidden in
+	// this session mode or shown on another page.
+	sec := func(kind Setting, label string, chips []string, selected int, note string) {
+		idx := slices.Index(vis, kind)
+		if idx < 0 || idx/per != page {
+			return
+		}
+		r.drawSettingsSection(img, kind, idx-page*per, label, chips, selected, note)
+	}
 
 	y := margin + 60
 	r.text(img, r.title, black, margin, y, "SETTINGS")
@@ -2289,27 +2997,36 @@ func (r *Renderer) RenderSettings(v SettingsView) *image.RGBA {
 	y += px(46)
 	fillRect(img, margin, y, Width-2*margin, 4, black)
 
-	// Section 0 — session mode: follow the live feed or replay a past session.
-	r.drawSettingsSection(img, 0, "SESSION MODE", SessionModeLabels, v.SessionMode,
+	// Session mode: follow the live feed or replay a past session.
+	sec(SettingSessionMode, "SESSION MODE", SessionModeLabels, v.SessionMode,
 		"Live follows the F1 feed and waits for a session; Replay browses OpenF1 by season, weekend and session.")
 
-	// Section 1 — what the header's second line shows.
+	// What the header's second line shows.
 	headerSel := 0
 	if v.HeaderRC {
 		headerSel = 1
 	}
-	r.drawSettingsSection(img, 1, "HEADER LINE", HeaderLineLabels, headerSel,
+	sec(SettingHeaderLine, "HEADER LINE", HeaderLineLabels, headerSel,
 		"The line under the title: the session's venue, or the newest race control message.")
 
-	// Section 2 — overall best sectors toggle.
+	// Overall best sectors toggle.
 	bestSel := 1
 	if v.ShowBestSectors {
 		bestSel = 0
 	}
-	r.drawSettingsSection(img, 2, "OVERALL BEST TIMES", []string{"ON", "OFF"}, bestSel,
-		"Show the session's fastest S1/S2/S3 and lap above those columns. The purple dot on the driver holding the fastest lap always shows.")
+	sec(SettingBestSectors, "OVERALL BEST TIMES", []string{"ON", "OFF"}, bestSel,
+		"Show the session's fastest S1/S2/S3 and lap above those columns (the purple fastest-lap dot always shows).")
 
-	// Section 3 — live delay (TV sync). A stepper rather than fixed choices:
+	// Mini-sectors under the sector times: hidden, dot clusters, or one lap line.
+	sec(SettingMiniSectors, "MINI SECTORS", MiniStyleLabels, int(v.MiniSectors),
+		"Colored mini-sectors under the S1/S2/S3 times: a dot cluster per sector, or one continuous lap line.")
+
+	// Clock timezone: device local, the circuit's, or UTC. The caption shows
+	// what the selected option resolves to right now.
+	sec(SettingTimeMode, "CLOCKS", TimeModeLabels, int(v.TimeMode),
+		"Timezone for the header, race control and replay clocks — "+zoneNote(v.TimeMode, v.TrackOffset)+".")
+
+	// Live delay (TV sync), shown in live mode only. A stepper rather than fixed choices:
 	// -/+ buttons either side of the current value, which is highlighted to
 	// read as a field rather than another button.
 	delayChips := make([]string, len(DelaySteps))
@@ -2331,9 +3048,9 @@ func (r *Renderer) RenderSettings(v SettingsView) *image.RGBA {
 	if !v.LiveDelayShown {
 		delayNote += " (applies when a live session is connected)"
 	}
-	r.drawSettingsSection(img, 3, "LIVE DELAY (TV SYNC)", delayChips, DelayValueIndex, delayNote)
+	sec(SettingDelay, "LIVE DELAY (TV SYNC)", delayChips, DelayValueIndex, delayNote)
 
-	// Section 4 — replay speed.
+	// Replay speed, shown in replay mode only.
 	speedChips := make([]string, len(SpeedOptions))
 	speedSel := -1
 	for i, s := range SpeedOptions {
@@ -2342,34 +3059,42 @@ func (r *Renderer) RenderSettings(v SettingsView) *image.RGBA {
 			speedSel = i
 		}
 	}
-	r.drawSettingsSection(img, 4, "REPLAY SPEED", speedChips, speedSel,
-		"Playback speed for OpenF1 replays (1x = realtime). Live is unaffected.")
+	sec(SettingSpeed, "REPLAY SPEED", speedChips, speedSel,
+		"Playback speed for OpenF1 replays (1x = realtime).")
 
-	// Section 5 — map driver marker style.
-	r.drawSettingsSection(img, 5, "MAP DRIVER MARKERS", MarkerLabels, int(v.Marker),
+	// Map driver marker style.
+	sec(SettingMarker, "MAP DRIVER MARKERS", MarkerLabels, int(v.Marker),
 		"How cars are drawn on the map: team disc with number, 3-letter code, or a plain dot.")
 
-	// Section 6 — driver tracking source.
-	r.drawSettingsSection(img, 6, "DRIVER TRACKING", TrackingLabels, int(v.Tracking),
+	// Driver tracking source.
+	sec(SettingTracking, "DRIVER TRACKING", TrackingLabels, int(v.Tracking),
 		"Auto uses GPS when broadcast and falls back to sector timing; or force one, or turn markers off.")
 
-	// Section 7 — T-cam marks.
+	// Mini-sector grid on the map's track outline.
+	mapMiniSel := 1
+	if v.MapMiniSectors {
+		mapMiniSel = 0
+	}
+	sec(SettingMapMini, "MAP MINI SECTORS", []string{"ON", "OFF"}, mapMiniSel,
+		"Tick every mini-sector boundary on the map's track outline, between the S1/S2/S3 markers.")
+
+	// T-cam marks.
 	tcamSel := 1
 	if v.ShowTcam {
 		tcamSel = 0
 	}
-	r.drawSettingsSection(img, 7, "T-CAM MARKS", []string{"ON", "OFF"}, tcamSel,
+	sec(SettingTcam, "T-CAM MARKS", []string{"ON", "OFF"}, tcamSel,
 		"Highlight the yellow-onboard-camera driver of each team (yellow border on the map, dot in timing).")
 
-	// Section 8 — B&W markers.
+	// B&W markers.
 	monoSel := 0
 	if v.Mono {
 		monoSel = 1
 	}
-	r.drawSettingsSection(img, 8, "MAP MARKER COLOR", []string{"Color", "B&W"}, monoSel,
+	sec(SettingMono, "MAP MARKER COLOR", []string{"Color", "B&W"}, monoSel,
 		"B&W markers drop team colors but refresh faster on the e-ink panel.")
 
-	// Section 9 — redraw interval.
+	// Redraw interval.
 	redrawChips := make([]string, len(RedrawOptions))
 	redrawSel := -1
 	for i, s := range RedrawOptions {
@@ -2378,18 +3103,40 @@ func (r *Renderer) RenderSettings(v SettingsView) *image.RGBA {
 			redrawSel = i
 		}
 	}
-	r.drawSettingsSection(img, 9, "REDRAW INTERVAL", redrawChips, redrawSel,
+	sec(SettingRedraw, "REDRAW INTERVAL", redrawChips, redrawSel,
 		"Minimum time between data updates. Longer is easier on the e-ink panel; taps always redraw at once.")
 
-	// Section 10 — full-screen B&W.
+	// Full-screen B&W.
 	fullSel := 0
 	if v.FullBW {
 		fullSel = 1
 	}
-	r.drawSettingsSection(img, 10, "FULL B&W", []string{"Off", "On"}, fullSel,
+	sec(SettingFullBW, "FULL B&W", []string{"Off", "On"}, fullSel,
 		"Render the whole screen in grayscale — the fastest e-ink refresh of all.")
 
+	if pages > 1 {
+		r.drawPagerButton(img, margin, setPagerY0, setPagerY1, "< PREV", page > 0)
+		r.drawPagerButton(img, Width-margin-btnW, setPagerY0, setPagerY1, "NEXT >", page < pages-1)
+		r.textCenter(img, r.row, gray, Width/2, setPagerY0+(setPagerY1-setPagerY0)/2+14,
+			fmt.Sprintf("PAGE %d/%d", page+1, pages))
+	}
+
 	return img
+}
+
+// drawPagerButton draws one button of a pager row; a grayed-out button marks
+// the direction as unavailable from this page.
+func (r *Renderer) drawPagerButton(img *image.RGBA, x0, y0, y1 int, label string, active bool) {
+	col := color.Color(black)
+	if !active {
+		col = light
+	}
+	w, h := btnW, y1-y0
+	fillRect(img, x0, y0, w, 3, col)
+	fillRect(img, x0, y1-3, w, 3, col)
+	fillRect(img, x0, y0, 3, h, col)
+	fillRect(img, x0+w-3, y0, 3, h, col)
+	r.textCenter(img, r.row, col, x0+w/2, y0+h/2+14, label)
 }
 
 // RenderMessage draws a full-screen status message (e.g. replay loading),

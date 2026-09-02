@@ -588,6 +588,15 @@ func (c *Client) recordLaps(patch any) {
 				PersonalBest: getBool(sm, "PersonalFastest"),
 				OverallBest:  getBool(sm, "OverallFastest"),
 			}
+			// The lap just completed, so the merged state still holds its
+			// full mini-segment statuses — keep them with the record.
+			if segs := sectorSegments(line["Sectors"], i); len(segs) > 0 {
+				ss := make([]int, len(segs))
+				for j, sv := range segs {
+					ss[j] = getInt(getMap(sv), "Status")
+				}
+				rec.Sectors[i].Segments = ss
+			}
 		}
 		h := c.history[num]
 		if n := len(h); n > 0 && h[n-1].Lap == rec.Lap {
@@ -771,6 +780,7 @@ func (c *Client) Snapshot() model.State {
 		}
 		st.Session = s
 		st.CircuitKey = getInt(getMap(si["Meeting"], "Circuit"), "Key")
+		st.TrackOffset = model.ParseGmtOffset(getStr(si, "GmtOffset"))
 	}
 	if lc := getMap(c.state["LapCount"]); lc != nil {
 		st.LeaderLap = getInt(lc, "CurrentLap")
@@ -835,8 +845,8 @@ func (c *Client) Snapshot() model.State {
 		// Fold the full log — a yellow raised long ago may sit outside the
 		// 30 messages kept for display.
 		st.YellowSectors = model.YellowSectorsFrom(st.RaceControl)
-		if len(st.RaceControl) > 30 {
-			st.RaceControl = st.RaceControl[:30]
+		if len(st.RaceControl) > 200 {
+			st.RaceControl = st.RaceControl[:200]
 		}
 	}
 
@@ -985,15 +995,24 @@ func (c *Client) Snapshot() model.State {
 			if len(segs[si]) > segCounts[si] {
 				segCounts[si] = len(segs[si])
 			}
+			if n := len(segs[si]); n > 0 {
+				statuses := make([]int, n)
+				for j, sv := range segs[si] {
+					statuses[j] = getInt(getMap(sv), "Status")
+				}
+				row.Sectors[si].Segments = statuses
+			}
 		}
-	countCompleted:
+		// Any nonzero status is a crossed segment (2048/2049/2051 and the
+		// undocumented variants like 2052). Segments complete in order, so
+		// the car is past the LAST nonzero one — scanning this way rides
+		// over holes where the feed reports a crossed segment as 0.
+		idx := 0
 		for si := 0; si < 3; si++ {
 			for _, sv := range segs[si] {
-				switch getInt(getMap(sv), "Status") {
-				case 2048, 2049, 2051:
-					row.CompletedSegments++
-				default:
-					break countCompleted
+				idx++
+				if getInt(getMap(sv), "Status") != 0 {
+					row.CompletedSegments = idx
 				}
 			}
 		}
